@@ -17,9 +17,13 @@ no mock/synthetic data path in the shipped product — only ``live`` and
 from __future__ import annotations
 
 import abc
-from typing import AsyncIterator
+from typing import TYPE_CHECKING, AsyncIterator
 
 from .model import VerifiedFrame
+
+if TYPE_CHECKING:  # avoid importing config at runtime (keeps this module light)
+    from raven.config import Settings
+
 
 
 class FeedSource(abc.ABC):
@@ -56,3 +60,44 @@ class FeedSource(abc.ABC):
 
     async def close(self) -> None:
         """Release any resources. Safe to call multiple times."""
+
+
+def build_source(settings: "Settings") -> FeedSource:
+    """Construct the configured :class:`FeedSource` from ``settings``.
+
+    ``RAVEN_FEED_MODE`` selects between the two — and only two — real data
+    paths:
+
+    * ``live``   → :class:`~raven.feed.live.LiveSSESource`, the real TxLINE SSE
+      connection (also records every raw frame for later replay).
+    * ``replay`` → :class:`~raven.feed.replay.ReplaySource`, which streams
+      *real captured* TxLINE bytes back through the same normalizer.
+
+    Imports are deferred so that, e.g., replay mode never requires ``httpx``.
+    """
+    mode = settings.feed_mode.lower()
+
+    if mode == "live":
+        from .live import LiveSSESource
+
+        return LiveSSESource(
+            url=settings.txline_sse_url,
+            api_key=settings.txline_api_key,
+            competition=settings.txline_competition,
+            service_level=settings.txline_service_level,
+            record_dir=settings.record_dir,
+        )
+
+    if mode == "replay":
+        from .replay import ReplaySource
+
+        return ReplaySource(
+            replay_file=settings.replay_file,
+            speed=settings.replay_speed,
+        )
+
+    raise ValueError(
+        f"Unknown RAVEN_FEED_MODE={settings.feed_mode!r}. "
+        f"Expected 'live' or 'replay'."
+    )
+

@@ -156,6 +156,35 @@ class RiskSignals:
             + weights.feed_confidence * s.feed_confidence
         )
 
+    def settle_pressure(self) -> float:
+        """How far the *settle-relevant* signals are from calm, in ``[0, 1]``.
+
+        RECALIBRATE waits for the **consensus/feed to settle**, not for RAVEN's
+        whole risk posture to relax. Two of the five FR4.3 inputs are
+        *structurally* elevated in the moments after a shock and must be
+        excluded from the stability test, or RECALIBRATE can never advance:
+
+        * ``exposure`` — the Self-Hedging Engine (F6) deliberately leaves a
+          small residual; that is its concern, not evidence the market is still
+          moving. Right after a hedge this term is non-zero *by design*.
+        * ``consensus_dev`` — a verified shock legitimately pushes fair value to
+          the model-risk cap, so this term pins near its maximum. That deviation
+          is *expected* and is not instability.
+
+        What "settled" actually means is narrow and physical: the feed is fresh
+        (``event_latency``), verified (``feed_confidence``), and the linked
+        markets have stopped moving (``cross_market_incoherence``). Stability is
+        the *loudest* of those remaining settle signals, so a single unsettled
+        channel is enough to reset the counter.
+        """
+        s = self.clipped()
+        return max(
+            s.event_latency,
+            s.cross_market_incoherence,
+            s.feed_confidence,
+        )
+
+
 
 @dataclass(frozen=True)
 class RiskDecision:
@@ -297,6 +326,29 @@ class RiskKernel:
         prior = self._state
         is_shock = frame.is_shock
 
+        # Count this tick toward recalibration stability *before* deciding, so
+        # the transition test reflects the current tick honestly instead of
+        # optimistically assuming it is stable. The previous split (decide with
+        # ``_stable_count + 1``, then update afterwards) could both re-enter
+        # prematurely on an unstable tick and stall the counter on residual
+        # risk.
+        #
+        # Crucially, stability is judged on ``settle_pressure`` — the
+        # feed/coherence signals only — not the full blended ``score``. The full
+        # score stays elevated after a shock because the hedge leaves a residual
+        # exposure and fair value legitimately sits at the model-risk cap; both
+        # are expected and neither means the market is still moving. Testing the
+        # full score here is what would trap RAVEN in RECALIBRATE forever. A
+        # tick is *stable* only with no shock and the settle signals back below
+        # the caution band.
+        if self._state is RiskState.RECALIBRATE:
+            settle = signals.settle_pressure()
+            if not is_shock and settle < self.caution_threshold:
+                self._stable_count += 1
+            else:
+                self._stable_count = 0
+
+
         next_state, reason = self._next_state(
             score=score,
             is_shock=is_shock,
@@ -304,10 +356,12 @@ class RiskKernel:
             hedge_complete=hedge_complete,
         )
 
-        # Maintain the consecutive-stable counter used by RECALIBRATE.
-        self._update_stability(next_state, score, is_shock)
+        # The counter only has meaning while recalibrating; clear it on exit.
+        if next_state is not RiskState.RECALIBRATE:
+            self._stable_count = 0
 
         self._state = next_state
+
         decision = RiskDecision(
             state=next_state,
             prior_state=prior,
@@ -399,7 +453,10 @@ class RiskKernel:
             return (RiskState.HEDGE, "hedging shock exposure")
 
         if state is RiskState.RECALIBRATE:
-            if self._stable_count + 1 >= self.stable_updates_required:
+            # ``_stable_count`` was already advanced for this tick in
+            # ``observe`` before we got here, so it reflects the current frame
+            # honestly — no ``+ 1`` fudge.
+            if self._stable_count >= self.stable_updates_required:
                 return (
                     RiskState.REENTER,
                     f"{self.stable_updates_required} stable updates; "
@@ -408,8 +465,9 @@ class RiskKernel:
             return (
                 RiskState.RECALIBRATE,
                 f"awaiting stable consensus "
-                f"({self._stable_count + 1}/{self.stable_updates_required})",
+                f"({self._stable_count}/{self.stable_updates_required})",
             )
+
 
         if state is RiskState.REENTER:
             if score >= self.withdraw_threshold:
@@ -424,20 +482,3 @@ class RiskKernel:
         # Defensive default; unreachable for the closed enum above.
         return (state, "no change")
 
-    def _update_stability(
-        self, next_state: RiskState, score: float, is_shock: bool
-    ) -> None:
-        """Track consecutive stable, shock-free ticks for RECALIBRATE.
-
-        A tick counts as *stable* only while recalibrating, when there is no
-        shock and the score has fallen back below the caution band. Any shock or
-        elevated score resets the counter, forcing RAVEN to wait afresh.
-        """
-        if next_state is RiskState.RECALIBRATE:
-            if not is_shock and score < self.caution_threshold:
-                self._stable_count += 1
-            else:
-                self._stable_count = 0
-        else:
-            # Leaving (or not in) RECALIBRATE clears the counter.
-            self._stable_count = 0

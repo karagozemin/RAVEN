@@ -17,8 +17,10 @@ outcome happens), negative means **short**.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import Dict, Iterator, Tuple
+
 
 # (market, outcome) — lower-cased at the boundary so lookups are robust.
 OutcomeKey = Tuple[str, str]
@@ -91,8 +93,28 @@ class Inventory:
     def total_notional(self) -> float:
         return sum(p.notional() for p in self._positions.values())
 
+    def state_hash(self) -> str:
+        """Deterministic SHA-256 digest of the current book.
+
+        Used by the Provenance layer (F7) to anchor the ``inventory_before`` and
+        ``inventory_after`` fields of a decision receipt. The digest must be
+        stable across identical replays, so positions are serialized in a
+        canonical order (sorted by key) and numeric fields are rounded to a
+        fixed precision to strip float-representation noise. Flat positions are
+        skipped so an untouched outcome never changes the hash.
+        """
+        parts = []
+        for k in sorted(self._positions):
+            pos = self._positions[k]
+            if pos.is_flat:
+                continue
+            parts.append(f"{k[0]}|{k[1]}|{pos.quantity:.9f}|{pos.avg_price:.9f}")
+        digest = hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+        return digest
+
     def __iter__(self) -> Iterator[Position]:
         return iter(self._positions.values())
+
 
     # -- writes -------------------------------------------------------------
 
