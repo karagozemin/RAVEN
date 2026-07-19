@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAVEN · Control Room</title>
+  <link rel="icon" href="/raven.png" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="scanlines" aria-hidden="true"></div>
+
+  <!-- ── Top bar ─────────────────────────────────────────────── -->
+  <header class="topbar">
+    <div class="brand">
+      <img src="/raven.png" alt="RAVEN" class="logo" />
+      <div class="brand-text">
+        <h1>RAVEN</h1>
+        <span class="tagline">Autonomous Market-Making · Control Room</span>
+      </div>
+    </div>
+
+    <div class="fixture">
+      <span class="fixture-label">FIXTURE</span>
+      <span id="fixtureId" class="fixture-id">—</span>
+      <span class="dot">·</span>
+      <span class="fixture-label">CLOCK</span>
+      <span id="matchTime" class="fixture-clock">--:--</span>
+    </div>
+
+    <div class="controls">
+      <label class="speed">
+        <span>SPEED</span>
+        <select id="speed">
+          <option value="6">0.5×</option>
+          <option value="12" selected>1×</option>
+          <option value="24">2×</option>
+          <option value="60">5×</option>
+          <option value="120">10×</option>
+        </select>
+      </label>
+      <button id="startBtn" class="btn btn-start">▶ START</button>
+      <button id="stopBtn" class="btn btn-stop" disabled>■ STOP</button>
+    </div>
+  </header>
+
+  <!-- ── State banner ────────────────────────────────────────── -->
+  <section id="stateBanner" class="state-banner state-idle">
+    <div class="state-main">
+      <span class="state-label">AGENT STATE</span>
+      <span id="stateValue" class="state-value">IDLE</span>
+    </div>
+    <div class="state-reason" id="stateReason">Press START to replay the live match feed.</div>
+    <div class="risk-meter">
+      <span class="risk-label">RISK</span>
+      <div class="risk-track"><div id="riskFill" class="risk-fill"></div></div>
+      <span id="riskValue" class="risk-value">0.0</span>
+    </div>
+  </section>
+
+  <!-- ── Main grid ───────────────────────────────────────────── -->
+  <main class="grid">
+    <!-- Score / market -->
+    <section class="card card-score">
+      <h2 class="card-title">MATCH</h2>
+      <div class="scoreboard">
+        <div class="team">
+          <span class="team-name">HOME</span>
+          <span id="scoreHome" class="team-score">0</span>
+        </div>
+        <span class="score-sep">:</span>
+        <div class="team">
+          <span class="team-name">AWAY</span>
+          <span id="scoreAway" class="team-score">0</span>
+        </div>
+      </div>
+      <div class="odds-row">
+        <div class="odds-cell"><span>1</span><b id="oddHome">—</b></div>
+        <div class="odds-cell"><span>X</span><b id="oddDraw">—</b></div>
+        <div class="odds-cell"><span>2</span><b id="oddAway">—</b></div>
+      </div>
+      <div class="event-flash" id="eventFlash"></div>
+    </section>
+
+    <!-- Live quotes -->
+    <section class="card card-quotes">
+      <h2 class="card-title">LIVE QUOTES <span id="quotesCount" class="pill">0</span></h2>
+      <div class="tablewrap">
+        <table class="qtable">
+          <thead>
+            <tr><th>OUTCOME</th><th>BID</th><th>FAIR</th><th>ASK</th><th>SPREAD</th><th>SIZE</th></tr>
+          </thead>
+          <tbody id="quotesBody">
+            <tr class="empty"><td colspan="6">No active quotes</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pnl-line">Realized spread P&amp;L <b id="spreadPnl">+0.000000</b></div>
+
+    </section>
+
+    <!-- Exposure -->
+    <section class="card card-exposure">
+      <h2 class="card-title">EXPOSURE</h2>
+      <div class="tablewrap">
+        <table class="qtable">
+          <thead>
+            <tr><th>OUTCOME</th><th>SIDE</th><th>QTY</th><th>AVG</th><th>NOTIONAL</th></tr>
+          </thead>
+          <tbody id="exposureBody">
+            <tr class="empty"><td colspan="5">Flat book</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="hedgeBox" class="hedge-box hidden">
+
+        <span class="hedge-title">⚡ HEDGE EXECUTED</span>
+        <span id="hedgeDetail" class="hedge-detail"></span>
+      </div>
+    </section>
+
+    <!-- Provenance / receipts -->
+    <section class="card card-receipts">
+      <h2 class="card-title">PROVENANCE LEDGER <span id="receiptCount" class="pill">0</span></h2>
+      <div id="receiptFeed" class="receipt-feed">
+        <div class="empty-feed">Signed decision receipts will stream here…</div>
+      </div>
+    </section>
+
+    <!-- Decision log -->
+    <section class="card card-log">
+      <h2 class="card-title">DECISION LOG</h2>
+      <div id="logFeed" class="log-feed"></div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span id="connDot" class="conn-dot conn-off"></span>
+    <span id="connText">Disconnected</span>
+    <span class="dot">·</span>
+    <span>TICK <b id="tickNum">0</b></span>
+    <span class="dot">·</span>
+    <span>SEQ <b id="seqNum">—</b></span>
+    <span class="dot">·</span>
+    <span id="provText" class="prov-text">—</span>
+    <span class="spacer"></span>
+    <span class="src">real TxLINE replay · fixture 18222446</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

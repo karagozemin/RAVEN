@@ -1,0 +1,297 @@
+/* ── RAVEN Control Room · frontend ────────────────────────────────
+ * Consumes the SSE tick stream from /stream and renders the agent's
+ * live decision state. Pure vanilla JS, no build step.
+ * ---------------------------------------------------------------- */
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+
+const el = {
+  fixtureId: $("fixtureId"),
+  matchTime: $("matchTime"),
+  speed: $("speed"),
+  startBtn: $("startBtn"),
+  stopBtn: $("stopBtn"),
+  stateBanner: $("stateBanner"),
+  stateValue: $("stateValue"),
+  stateReason: $("stateReason"),
+  riskFill: $("riskFill"),
+  riskValue: $("riskValue"),
+  scoreHome: $("scoreHome"),
+  scoreAway: $("scoreAway"),
+  oddHome: $("oddHome"),
+  oddDraw: $("oddDraw"),
+  oddAway: $("oddAway"),
+  eventFlash: $("eventFlash"),
+  quotesBody: $("quotesBody"),
+  quotesCount: $("quotesCount"),
+  spreadPnl: $("spreadPnl"),
+  exposureBody: $("exposureBody"),
+  hedgeBox: $("hedgeBox"),
+  hedgeDetail: $("hedgeDetail"),
+  receiptFeed: $("receiptFeed"),
+  receiptCount: $("receiptCount"),
+  logFeed: $("logFeed"),
+  connDot: $("connDot"),
+  connText: $("connText"),
+  tickNum: $("tickNum"),
+  seqNum: $("seqNum"),
+  provText: $("provText"),
+};
+
+let source = null;
+let running = false;
+let cumulativePnl = 0;
+let receiptTotal = 0;
+let lastScore = { home: 0, away: 0 };
+let flashTimer = null;
+
+const STATE_CLASS = {
+  NORMAL: "state-normal",
+  WIDEN: "state-widen",
+  WITHDRAW: "state-withdraw",
+  HALT: "state-halt",
+  IDLE: "state-idle",
+};
+
+function fmt(n, d = 3) {
+  if (n === null || n === undefined) return "—";
+  return Number(n).toFixed(d);
+}
+
+function setConnection(on) {
+  el.connDot.className = "conn-dot " + (on ? "conn-on" : "conn-off");
+  el.connText.textContent = on ? "Connected · streaming" : "Disconnected";
+}
+
+/* ── Renderers ────────────────────────────────────────────────── */
+function renderState(t) {
+  const state = t.state || "IDLE";
+  el.stateBanner.className =
+    "state-banner " + (STATE_CLASS[state] || "state-idle");
+  el.stateValue.textContent = state;
+  el.stateReason.textContent = t.reason || "";
+
+  const risk = t.risk_score ?? 0;
+  el.riskFill.style.width = Math.min(100, Math.max(0, risk)) + "%";
+  el.riskValue.textContent = fmt(risk, 1);
+}
+
+function renderMatch(t) {
+  el.fixtureId.textContent = t.fixture_id ?? "—";
+  el.matchTime.textContent = t.match_time || "--:--";
+
+  const s = t.score || { home: 0, away: 0 };
+  if (s.home !== lastScore.home) bumpScore(el.scoreHome, s.home);
+  if (s.away !== lastScore.away) bumpScore(el.scoreAway, s.away);
+  lastScore = { home: s.home, away: s.away };
+
+  if (t.odds) {
+    el.oddHome.textContent = fmt(t.odds.home, 2);
+    el.oddDraw.textContent = fmt(t.odds.draw, 2);
+    el.oddAway.textContent = fmt(t.odds.away, 2);
+  }
+}
+
+function bumpScore(node, value) {
+  node.textContent = value;
+  node.classList.remove("bump");
+  void node.offsetWidth; // reflow to restart animation
+  node.classList.add("bump");
+}
+
+function flashEvent(t) {
+  let text = "";
+  let cls = "";
+  if (t.event_type && t.event_type !== "OTHER") {
+    text = "⚽ " + t.event_type.replace(/_/g, " ");
+    cls = t.is_shock ? "shock" : "goal";
+  }
+  if (!text) return;
+  el.eventFlash.textContent = text;
+  el.eventFlash.className = "event-flash show " + cls;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => {
+    el.eventFlash.className = "event-flash";
+  }, 2500);
+}
+
+function renderQuotes(t) {
+  el.quotesCount.textContent = t.quotes_count ?? 0;
+  const rows = t.quotes || [];
+  if (!rows.length) {
+    el.quotesBody.innerHTML =
+      '<tr class="empty"><td colspan="6">No active quotes — agent not quoting</td></tr>';
+  } else {
+    el.quotesBody.innerHTML = rows
+      .map(
+        (q) => `<tr class="row-new">
+          <td>${q.outcome}</td>
+          <td class="bid">${fmt(q.bid, 3)}</td>
+          <td class="fair">${fmt(q.fair, 3)}</td>
+          <td class="ask">${fmt(q.ask, 3)}</td>
+          <td>${fmt(q.spread_pct, 1)}%</td>
+          <td>${fmt(q.bid_size, 0)}/${fmt(q.ask_size, 0)}</td>
+        </tr>`
+      )
+      .join("");
+  }
+  cumulativePnl += t.spread_pnl || 0;
+  el.spreadPnl.textContent =
+    (cumulativePnl >= 0 ? "+" : "") + fmt(cumulativePnl, 6);
+}
+
+function renderExposure(t) {
+  const rows = t.exposure || [];
+  if (!rows.length) {
+    el.exposureBody.innerHTML =
+      '<tr class="empty"><td colspan="5">Flat book — no open positions</td></tr>';
+  } else {
+    el.exposureBody.innerHTML = rows
+      .map(
+        (p) => `<tr>
+          <td>${p.outcome}</td>
+          <td class="${p.side}">${p.side.toUpperCase()}</td>
+          <td>${fmt(p.quantity, 2)}</td>
+          <td>${fmt(p.avg_price, 3)}</td>
+          <td>${fmt(p.notional, 2)}</td>
+        </tr>`
+      )
+      .join("");
+  }
+
+  if (t.hedge) {
+    const h = t.hedge;
+    el.hedgeBox.classList.remove("hidden");
+    el.hedgeDetail.textContent =
+      `${h.trades.length} trade(s) · worst shock ${h.worst_shock} · ` +
+      `Δ ${fmt(h.worst_before, 2)} → ${fmt(h.worst_after, 2)} ` +
+      `(−${fmt(h.reduction, 2)})`;
+  } else {
+    el.hedgeBox.classList.add("hidden");
+  }
+}
+
+function renderReceipt(t) {
+  if (!t.receipt) return;
+  const r = t.receipt;
+  receiptTotal += 1;
+  el.receiptCount.textContent = receiptTotal;
+
+  const empty = el.receiptFeed.querySelector(".empty-feed");
+  if (empty) empty.remove();
+
+  const div = document.createElement("div");
+  div.className = "receipt act-" + (r.action || "").toLowerCase();
+  const anchored = r.anchored
+    ? `<span class="anchored">⛓ anchored · ${r.backend}</span>`
+    : `<span class="unanchored">local · ${r.backend}</span>`;
+  div.innerHTML = `
+    <div class="receipt-head">
+      <span class="receipt-action">${r.action}</span>
+      <span class="receipt-seq">seq #${r.sequence}</span>
+    </div>
+    <div class="receipt-hash">${(r.hash || "").slice(0, 32)}…</div>
+    <div class="receipt-meta">
+      <span>${r.previous_state} → ${r.new_state}</span>
+      <span>risk ${fmt(r.risk_score, 4)}</span>
+      <span>cancelled ${r.quotes_cancelled}</span>
+      <span>hedges ${r.hedge_trades}</span>
+      ${anchored}
+    </div>`;
+  el.receiptFeed.prepend(div);
+
+  while (el.receiptFeed.children.length > 40) {
+    el.receiptFeed.lastChild.remove();
+  }
+}
+
+function renderLog(t) {
+  const line = document.createElement("div");
+  line.className =
+    "log-line st-" +
+    (t.state || "").toLowerCase() +
+    (t.transitioned ? " transitioned" : "");
+  line.innerHTML = `
+    <span class="log-seq">#${t.sequence}</span>
+    <span class="log-state">${t.state}</span>
+    <span class="log-msg">${t.reason || ""}</span>`;
+  el.logFeed.prepend(line);
+  while (el.logFeed.children.length > 200) {
+    el.logFeed.lastChild.remove();
+  }
+}
+
+function renderFooter(t) {
+  el.tickNum.textContent = t.tick ?? 0;
+  el.seqNum.textContent = t.sequence ?? "—";
+  el.provText.textContent = t.provenance || "—";
+}
+
+function handleTick(t) {
+  renderState(t);
+  renderMatch(t);
+  flashEvent(t);
+  renderQuotes(t);
+  renderExposure(t);
+  renderReceipt(t);
+  renderLog(t);
+  renderFooter(t);
+}
+
+/* ── Stream control ───────────────────────────────────────────── */
+function start() {
+  if (running) return;
+  running = true;
+  cumulativePnl = 0;
+  receiptTotal = 0;
+  lastScore = { home: 0, away: 0 };
+  el.receiptFeed.innerHTML =
+    '<div class="empty-feed">Signed decision receipts will stream here…</div>';
+  el.logFeed.innerHTML = "";
+  el.receiptCount.textContent = "0";
+
+  const speed = el.speed.value || "12";
+  source = new EventSource(`/stream?speed=${encodeURIComponent(speed)}`);
+
+  source.onopen = () => setConnection(true);
+
+  source.onmessage = (e) => {
+    try {
+      handleTick(JSON.parse(e.data));
+    } catch (err) {
+      console.error("tick parse error", err, e.data);
+    }
+  };
+
+  source.addEventListener("done", () => {
+    stop();
+    el.stateReason.textContent = "Replay complete — full match processed.";
+  });
+
+  source.addEventListener("error", (e) => {
+    // EventSource fires 'error' both on stream end and on real errors.
+    if (source && source.readyState === EventSource.CLOSED) {
+      stop();
+    }
+  });
+
+  el.startBtn.disabled = true;
+  el.stopBtn.disabled = false;
+}
+
+function stop() {
+  running = false;
+  if (source) {
+    source.close();
+    source = null;
+  }
+  setConnection(false);
+  el.startBtn.disabled = false;
+  el.stopBtn.disabled = true;
+}
+
+el.startBtn.addEventListener("click", start);
+el.stopBtn.addEventListener("click", stop);
+
+setConnection(false);
