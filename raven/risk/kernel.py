@@ -343,7 +343,16 @@ class RiskKernel:
         # the caution band.
         if self._state is RiskState.RECALIBRATE:
             settle = signals.settle_pressure()
-            if not is_shock and settle < self.caution_threshold:
+            # Stability for re-entry is judged against the *withdrawal* band,
+            # not the caution band.  After a shock, event_latency is structurally
+            # ~0.5 (frames arrive at a normal cadence, not "stale") and
+            # cross_market_incoherence stays elevated while the rolling volatility
+            # window drains the shock jump — both well above caution_threshold
+            # (0.35) by design.  Using caution_threshold here means the counter
+            # never increments, trapping RAVEN in RECALIBRATE forever.  The
+            # correct question is: "has the settle pressure crossed into the
+            # withdrawal-alarm zone?" — if it hasn't, the tick is stable enough.
+            if not is_shock and settle < self.withdraw_threshold:
                 self._stable_count += 1
             else:
                 self._stable_count = 0

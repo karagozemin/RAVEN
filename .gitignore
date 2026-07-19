@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg-info
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Environment / secrets — NEVER commit real credentials
+.env
+.env.local
+.env.*.local
+_keys/
+
+# Data — real TxLINE recordings stay local, not in git
+data/
+recordings/
+
+# Temp / generated scripts
+txline_auth.mjs
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
