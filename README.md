@@ -1,358 +1,278 @@
-# 🐦‍⬛ RAVEN
-### Real-time Autonomous Verifiable Exposure Neutralizer
+<p align="center">
+  <img src="RAVEN.png" alt="RAVEN logo" width="250" />
+</p>
 
-> *"Most market makers earn until the match changes. RAVEN is built for the moment it does."*
+<h1 align="center">RAVEN</h1>
 
-RAVEN is an autonomous in-play market maker for live football markets, powered by TxLINE real-time data anchored on Solana. It earns spread under normal flow, and — the instant a cryptographically verified match event hits — withdraws quotes, neutralizes exposure across connected markets, then safely re-enters. Every decision is proved on-chain.
+<p align="center">
+  <strong>Real-time Autonomous Verifiable Exposure Neutralizer</strong><br />
+  An event-aware market-making agent built to survive live football market shocks.
+</p>
 
-**Track:** Trading Tools and Agents — TxODDS World Cup Hackathon 2026
-**Prize target:** 1st Place — 10,000 USDT
+<p align="center">
+  <a href="ARCHITECTURE.md"><strong>Architecture</strong></a> ·
+  <a href="DEMO_SCRIPT.md"><strong>Demo script</strong></a> ·
+  <a href="https://raven-backend-xc2x.onrender.com/healthz"><strong>Backend health</strong></a>
+</p>
 
----
+> Most market makers earn until the match changes. RAVEN is built for the moment it does.
 
-## The Problem
+RAVEN consumes TxLINE football data, continuously derives fair probabilities and
+two-sided quotes, and monitors the portfolio through a deterministic risk state
+machine. When a goal, red card, penalty, or VAR shock arrives, RAVEN withdraws,
+computes a cross-market hedge, waits for stable updates, and re-enters. Material
+decisions produce canonical, hash-addressed receipts that can optionally be anchored
+to Solana devnet.
 
-Live football markets move violently the instant match state changes. A goal, red card, or VAR overturn affects every connected market simultaneously — 1X2, Handicap, Total Goals, Correct Score. If even one quote stays stale for seconds, informed traders drain margin before a human can react.
+Built for the **Trading Tools and Agents** track of the TxODDS World Cup Hackathon 2026.
 
-Traditional bots either (a) predict direction and lose, or (b) quote statically and get picked off during event shocks. Neither is production-ready.
+## Why RAVEN
 
-## The Solution
+Live football markets are coupled. A goal does not move only Match Winner; it can
+reprice Asian Handicap, Total Goals, Correct Score, and adjacent markets at once.
+A static market maker can leave stale liquidity exposed precisely when informed flow
+is fastest.
 
-RAVEN combines three layers:
+RAVEN treats this as a portfolio-control problem:
 
-1. **Earn** — Continuously quotes bid/ask using TxLINE consensus odds + event-hazard fair value
-2. **Survive** — Detects verified event shocks (goal, red card, penalty, VAR) and withdraws within milliseconds; neutralizes cross-market exposure autonomously
-3. **Prove** — Anchors every quote, hedge, and risk decision to Solana devnet as a cryptographically verifiable Decision Receipt
+| Mode | Behaviour |
+| --- | --- |
+| **Earn** | Remove vig, estimate bounded fair value, and quote both sides with inventory-aware spreads. |
+| **Survive** | Detect verified shocks, cancel exposure, hedge the connected book, and suspend quoting. |
+| **Recover** | Require consecutive stable frames before widening back into the market. |
+| **Prove** | Emit deterministic decision receipts with feed sequence, state hashes, action, reason, and hedge details. |
 
----
+## Demo Flow
 
-## Architecture
+The deployed Control Room replays a recorded TxLINE match through the same agent
+pipeline used by live mode.
 
-```
-TxLINE SSE / Replay Feed
-        │
-        ▼
-[F1] Verified Feed Layer         ← hash · sequence · Solana anchor ref
-        │
-   ┌────┴────┐
-   ▼         ▼
-[F2] Fair-Value    [F5] Market Dependency Graph
-    Engine              (cross-market coherence)
-   │
-   ▼
-[F3] Quote Engine  ← inventory skew · spread controls
-   │
-   ▼
-[F4] Risk Kernel / State Machine ← [F9] Adversarial Flow Detector
-   NORMAL → CAUTION → WITHDRAW → HEDGE → RECALIBRATE → REENTER
-   │
-   ▼
-[F6] Self-Hedging Engine  ← cross-market exposure neutralizer
-   │
-   ▼
-[F7] Solana Decision Receipts  ──► verify.ts (independent proof)
-   │
-   ▼
-[F8] Deterministic Replay & Counterfactual Lab
-   │
-   ▼
-[F10] Live Control Room Dashboard
-```
-
----
-
-## Mathematical Foundation
-
-### 1. Vig Removal (Fair Probability)
-
-Raw probability from decimal odds:
-
-$$p_{raw,i} = \frac{1}{odds_i}$$
-
-Multiplicative vig removal:
-
-$$p_{fair,i} = \frac{p_{raw,i}}{\sum_j p_{raw,j}}$$
-
-### 2. Event-Hazard Adjustment
-
-RAVEN does **not** assume linear "theta decay". Instead, it models match-state-dependent event hazard using an inhomogeneous Poisson process where goal intensities vary with score, time remaining, and match phase:
-
-$$\lambda(t, s) = \lambda_0 \cdot f(t) \cdot g(s) \cdot h(events)$$
-
-The reservation price is:
-
-$$p_{reservation} = p_{fair} + \Delta_{hazard} + \Delta_{inventory} + \Delta_{latency/vol}$$
-
-The adjusted probability is bounded to not deviate from TxLINE consensus beyond a configurable threshold (model-risk cap).
-
-### 3. Quote Engine
-
-Components are strictly separated:
-
-| Layer | Role |
-|-------|------|
-| Fair-value model | Computes probability |
-| Quote engine | Generates bid/ask |
-| Inventory skew | Shifts quotes against over-held outcome |
-| Risk limits | Sets maximum position size |
-| Fractional Kelly | Sets capital-usage cap only (does not generate quotes) |
-
-$$f^* = \frac{bp - q}{b}$$
-
-Example with fair probability = 0.582:
-
-```
-base spread      = 1.8%
-inventory skew   = -0.7%
-event premium    = 2.4%
-─────────────────────────
-bid = 0.547   ask = 0.603
+```mermaid
+flowchart LR
+    A[TxLINE frame] --> B[Fair value]
+    B --> C[Two-sided quotes]
+    C --> D{Event shock?}
+    D -- No --> E[Capture spread]
+    D -- Yes --> F[Withdraw]
+    F --> G[Hedge portfolio]
+    G --> H[Recalibrate]
+    H --> I[Re-enter]
+    F --> J[Decision receipt]
+    G --> J
 ```
 
-### 4. Cross-Market Risk Score
+During the demo, watch four things:
 
-$$risk = 0.30 \cdot \Delta_{consensus} + 0.25 \cdot latency_{event} + 0.20 \cdot incoherence_{cross} + 0.15 \cdot exposure + 0.10 \cdot confidence_{feed}$$
+1. The state badge and risk score during normal quoting.
+2. Quotes disappear immediately when a critical event is processed.
+3. The state advances through `WITHDRAW`, `HEDGE`, `RECALIBRATE`, and `REENTER`.
+4. The receipt feed records why the action happened and which TxLINE sequence caused it.
 
-### 5. Self-Hedging Objective
+The ready-to-read English narration is in [DEMO_SCRIPT.md](DEMO_SCRIPT.md).
 
-Minimize portfolio event-shock loss without eliminating spread revenue:
+## System at a Glance
 
-$$\min\left[\mathbb{E}[\text{loss under event shocks}] + \alpha \cdot \text{inventory concentration} + \beta \cdot \text{hedge cost}\right]$$
+```text
+TxLINE Live SSE / Recorded Replay
+                 |
+          normalize + verify
+                 |
+     fair value + hazard model
+                 |
+       deterministic risk kernel
+          /              \
+   quote engine       hedge engine
+          \              /
+       inventory + decision receipt
+                 |
+        SSE Control Room API
+                 |
+          Vercel frontend
+```
 
-Cross-market hedge instruments:
-- Long Home Win → Short Home Asian Handicap
-- 1X2 ↔ Double Chance netting
-- Goal shock ↔ Total Goals hedge
+For component boundaries, sequence diagrams, state transitions, invariants, and
+deployment topology, see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
----
+## Core Capabilities
 
-## Quickstart
+- Live TxLINE SSE ingestion and byte-preserving recording
+- Deterministic replay of captured match data
+- Multiplicative and Shin vig removal
+- Score-, clock-, and event-aware Poisson hazard pricing
+- Bounded deviation from market consensus
+- Inventory-skewed bid/ask generation and adaptive spread controls
+- Weighted risk kernel with explicit market postures
+- Cross-market dependency and stale-market detection primitives
+- Scenario-based portfolio hedging across connected outcomes
+- Adversarial flow detection primitives
+- Canonical SHA-256 decision receipts
+- Optional Solana Memo or transaction anchoring
+- Independent TypeScript receipt verifier
+- Browser Control Room streamed over Server-Sent Events
+- Counterfactual comparison against an event-blind baseline
 
-### Prerequisites
+## Risk State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> NORMAL
+    NORMAL --> CAUTION: elevated risk
+    CAUTION --> NORMAL: risk clears
+    NORMAL --> WITHDRAW: verified shock
+    CAUTION --> WITHDRAW: verified shock / critical risk
+    WITHDRAW --> HEDGE: quotes cancelled
+    HEDGE --> RECALIBRATE: hedge evaluated
+    RECALIBRATE --> RECALIBRATE: unstable update
+    RECALIBRATE --> REENTER: stable update threshold
+    REENTER --> NORMAL: recovery complete
+    REENTER --> WITHDRAW: new shock
+```
+
+The risk score is a bounded blend of normalized signals:
+
+$$
+R = 0.30D_{consensus} + 0.25L_{event} + 0.20I_{cross-market}
+  + 0.15E_{portfolio} + 0.10C_{feed}
+$$
+
+This score controls posture; a verified critical event can force withdrawal
+independently of the blended score.
+
+## Repository Map
+
+| Path | Responsibility |
+| --- | --- |
+| `raven/feed/` | Live SSE, normalization, provenance, recording, and replay |
+| `raven/pricing/` | Vig removal, match state, hazard model, and fair value |
+| `raven/quoting/` | Inventory and two-sided quote construction |
+| `raven/risk/` | State machine, dependency graph, and flow toxicity |
+| `raven/hedging/` | Shock exposure and cross-market hedge planning |
+| `raven/provenance/` | Canonical receipts, local store, and Solana anchors |
+| `raven/web/` | Replay driver, JSON serialization, SSE server, and frontend |
+| `raven/counterfactual.py` | Baseline-versus-RAVEN replay comparison |
+| `verify.ts` | Independent Solana receipt verification |
+| `tests/` | Deterministic unit tests for normalization and risk behaviour |
+
+## Run Locally
+
+### Requirements
 
 - Python 3.11+
-- Node.js 18+ (for verify.ts)
-- Solana devnet wallet (auto-created on first run)
-- TxLINE API credentials (set in `.env`)
-
-### Setup
+- Node.js 18+ only for the TypeScript verifier
 
 ```bash
-# Clone
-git clone https://github.com/your-org/raven
-cd raven
-
-# Python environment
+git clone https://github.com/karagozemin/RAVEN.git
+cd RAVEN
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+```
 
-# Copy env and add your TxLINE API key
-cp .env.example .env
-# Edit .env: set TXLINE_API_KEY
+Start the self-contained web demo:
 
-# Node dependencies (for verify.ts)
+```bash
+python -m raven.web
+```
+
+Open `http://localhost:8787`. The packaged replay requires no API key or wallet.
+
+Run the deterministic pipeline smoke test and tests:
+
+```bash
+python -m raven.main --smoke
+python -m pytest -q
+```
+
+Build the frontend exactly as Vercel does:
+
+```bash
+RAVEN_API_BASE=http://localhost:8787 bash scripts/build_frontend.sh
+```
+
+## Live TxLINE Mode
+
+Copy `.env.example` to `.env`, set the TxLINE endpoint and credentials, then use
+the live source configuration. Live ingestion records raw frames so the same input
+can later be replayed deterministically.
+
+Important environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `RAVEN_FEED_MODE` | `live` or `replay` |
+| `TXLINE_SSE_URL` | TxLINE SSE endpoint |
+| `TXLINE_API_KEY` | TxLINE bearer credential |
+| `TXLINE_SERVICE_LEVEL` | Requested TxLINE service tier |
+| `RAVEN_RECORD_DIR` | Raw frame recording directory |
+| `RAVEN_REPLAY_FILE` | Recording used in replay mode |
+| `RAVEN_REPLAY_SPEED` | Replay acceleration factor |
+
+Secrets and local recordings are excluded from Git.
+
+## Decision Receipts
+
+RAVEN emits a receipt only for material actions such as a state transition,
+withdrawal, or hedge. Ordinary quote refreshes are not individually anchored.
+
+Each receipt binds together:
+
+- policy version and action reason
+- fixture and TxLINE sequence
+- source market-state hash
+- previous and next risk states
+- risk score and cancelled quote count
+- inventory hashes and hedge trades
+- execution timestamp
+
+The default local/demo emitter stores receipts with a null anchor so the system
+runs without a wallet. `MemoAnchor` and `SolanaAnchor` provide devnet-backed
+implementations when configured. Verify an anchored transaction with:
+
+```bash
 npm install
+npx ts-node verify.ts <SOLANA_TRANSACTION_SIGNATURE>
 ```
 
-### Run RAVEN (Live Mode)
+## Deploy
 
-```bash
-python -m raven.main --mode live
+RAVEN uses a split deployment because the backend holds long-lived SSE connections.
+
+### Render backend
+
+Create a Render Web Service from this repository. `render.yaml` defines:
+
+```text
+Build:  pip install -r requirements.txt
+Start:  python -m raven.web
+Health: /healthz
 ```
 
-### Run with Deterministic Replay
+Current backend health endpoint:
+`https://raven-backend-xc2x.onrender.com/healthz`
 
-```bash
-python -m raven.main --mode replay --file data/wc2026_recorded.ndjson --speed 10
+### Vercel frontend
+
+Import the same repository with Framework Preset `Other`, then set:
+
+```text
+RAVEN_API_BASE=https://raven-backend-xc2x.onrender.com
 ```
 
-### Run Counterfactual Lab (RAVEN vs Baseline)
+`vercel.json` runs `scripts/build_frontend.sh` and publishes `public/`. Redeploy
+Vercel whenever `RAVEN_API_BASE` changes because the value is injected at build time.
 
-```bash
-python -m raven.counterfactual --file data/wc2026_recorded.ndjson
-```
+## Engineering Principles
 
-### Dashboard
+- **Deterministic decisions:** identical ordered frames produce identical state transitions.
+- **Fail closed on shocks:** RAVEN removes liquidity before attempting recovery.
+- **Bounded model risk:** model output cannot drift arbitrarily far from consensus.
+- **Separation of concerns:** feed, pricing, risk, execution, proof, and transport are replaceable boundaries.
+- **Auditability over narration:** receipts capture inputs and actions; an LLM is not in the decision loop.
+- **Demo fidelity:** replay enters the same normalized frame and agent pipeline as live input.
 
-```bash
-python raven/dashboard.py
-# Opens on http://localhost:8050
-```
+## Scope
 
-## Deploy (Render + Vercel)
-
-The SSE backend must run as a persistent Render web service. The static Control
-Room frontend is deployed separately to Vercel.
-
-1. Push the repository to GitHub.
-2. In Render, choose **New > Blueprint**, connect the repository, and deploy.
-   Render reads `render.yaml`; no manual build or start command is required.
-3. Confirm `https://<render-service>.onrender.com/healthz` returns
-   `{"status":"ok"}` and copy the service origin without a trailing slash.
-4. In Vercel, import the same repository. Add the environment variable
-   `RAVEN_API_BASE=https://<render-service>.onrender.com` for Production,
-   Preview, and Development.
-5. Deploy Vercel. The existing `vercel.json` builds the static site into
-   `public/` and injects the Render origin into `config.js`.
-
-When the Render URL or Vercel environment variable changes, redeploy Vercel so
-the generated frontend configuration is refreshed. The included replay demo
-needs no TxLINE or Solana secrets.
-
----
-
-## TxLINE Endpoints Used
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /fixtures` | Fetch World Cup fixture list |
-| `GET /odds/snapshot/{fixtureId}` | Initial consensus odds snapshot |
-| `SSE /odds/stream/{fixtureId}` | Live odds stream with anchor refs |
-| `SSE /scores/stream/{fixtureId}` | Live score and match event stream |
-| `GET /scores/history/{fixtureId}` | Historical match replay data |
-| `GET /fixtures/{fixtureId}/proof` | Solana Merkle proof for verification |
-
----
-
-## Verifying a Decision Receipt
-
-Every critical action RAVEN takes is anchored on Solana devnet as a Decision Receipt.
-
-```bash
-# Install dependencies
-npm install
-
-# Verify a receipt
-npx ts-node verify.ts <SOLANA_TX_SIGNATURE>
-```
-
-Output:
-```
-🐦‍⬛ RAVEN Decision Receipt Verifier
-══════════════════════════════════════
-Transaction: 5x9kABC...
-Slot:        428,113,908
-Timestamp:   2026-07-15T21:14:05.144Z
-
-Receipt:
-  Action:   CANCEL_AND_HEDGE
-  Reason:   VERIFIED_PENALTY_EVENT
-  Policy:   raven-v1.0.0
-  Markets:  3 suspended
-  Hedge:    executed (residual: +930 USDC)
-  Quotes cancelled: 14
-
-✓ Receipt is valid — decision is cryptographically verified
-```
-
----
-
-## State Machine
-
-```
-NORMAL ──── risk low ────────────────────────────────┐
-  │                                                   │
-  ▼ risk rising                                       │
-CAUTION ──── risk stabilises ──────────────────────► │
-  │                                                   │
-  ▼ critical event / risk threshold                   │
-WITHDRAW                                              │
-  │ (cancel all quotes)                               │
-  ▼                                                   │
-HEDGE                                                 │
-  │ (neutralize cross-market exposure)                │
-  ▼                                                   │
-RECALIBRATE                                           │
-  │ (await 3 consecutive stable TxLINE updates)       │
-  ▼                                                   │
-REENTER ──────────────────────────────────────────── ┘
-  (reopen quotes at new consensus price)
-```
-
----
-
-## Counterfactual Results
-
-Same TxLINE replay feed, two agents:
-
-| Metric | Baseline MM | RAVEN |
-|--------|-------------|-------|
-| Spread revenue | 3,800 USDC | 3,420 USDC |
-| Event shock loss | -6,900 USDC | -720 USDC |
-| **Net P&L** | **-3,100 USDC** | **+2,700 USDC** |
-| Max inventory exposure | 21,000 USDC | 7,400 USDC |
-| Manual interventions required | 3 | 0 |
-| Event-to-withdrawal latency | ~4,200 ms | **~230 ms** |
-
-> All numbers are outputs from the deterministic replay engine on real recorded TxLINE data — not pre-selected showcase figures.
-
----
-
-## Repository Structure
-
-```
-raven/
-├── feed/               # TxLINE ingestion, normalization, replay
-│   ├── live.py         # Async SSE connection + recorder
-│   ├── replay.py       # Deterministic replay engine
-│   ├── model.py        # Pydantic data models
-│   ├── normalize.py    # Schema normalization
-│   └── source.py       # Feed source abstraction
-├── pricing/            # Fair-value computation
-│   ├── fair_value.py   # Reservation price aggregator
-│   ├── hazard.py       # Event-hazard model (Poisson)
-│   ├── vig.py          # Vig removal
-│   └── state.py        # Match state tracker
-├── quoting/            # Quote generation
-│   ├── engine.py       # Bid/ask + expiry + max size
-│   └── inventory.py    # Inventory skew
-├── risk/               # Risk management
-│   ├── kernel.py       # State machine (NORMAL→REENTER)
-│   ├── dependency_graph.py  # Cross-market coherence
-│   └── adversarial.py  # Toxic flow detection
-├── hedging/            # Self-hedging engine
-│   └── engine.py       # Cross-market exposure neutralizer
-├── provenance/         # Solana decision receipts
-│   ├── receipt.py      # Receipt builder
-│   ├── anchor.py       # Solana devnet writer
-│   └── store.py        # Local receipt index
-├── agent.py            # Main agent orchestration loop
-├── config.py           # Configuration
-├── counterfactual.py   # Baseline vs RAVEN comparison
-├── dashboard.py        # Live Control Room (Dash)
-└── main.py             # Entry point
-verify.ts               # Independent receipt verifier (TypeScript)
-FEEDBACK.md             # TxLINE API engineering feedback
-```
-
----
-
-## MVP Scope
-
-**Markets:** Match Winner (1X2) · Total Goals · Asian Handicap
-
-**Events handled:** Goal · Red Card · VAR Overturn · Match Finalisation
-
-**Execution:** Simulated order book on devnet (no real money required to test)
-
-**Chain:** Solana devnet — receipts verifiable by any third party
-
----
-
-## Key Design Decisions
-
-**LLM is not the decision-maker.** The risk kernel and quote engine are fully deterministic. LLM is only used in the dashboard's Decision Inspector to generate human-readable explanations of decisions already made by the mathematical engine.
-
-**TxLINE consensus is not replaced.** The event-hazard model applies a bounded adjustment on top of the TxLINE consensus probability. The model never overrides consensus — it refines it. This caps model risk.
-
-**Shadow mode ready.** RAVEN is designed to run alongside an existing sportsbook trading system. It monitors, withdraws, and hedges — it does not replace the operator's trading engine.
-
----
-
-## License
-
-MIT — see LICENSE
-
----
-
-*RAVEN — TxODDS World Cup Hackathon 2026 submission*
-*Built with TxLINE real-time data · Solana devnet*
+RAVEN is a hackathon prototype and simulation environment. It does not place
+real-money bets or claim production exchange connectivity. Production use would
+require authenticated execution adapters, persistent shared state, durable queues,
+reconciliation, monitoring, key management, and a formal risk review.
