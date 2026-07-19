@@ -1,0 +1,19 @@
+{
+  "action": "WITHDRAW",
+  "anchorBackend": "null",
+  "anchored": false,
+  "executionTimestamp": 1784412004000,
+  "fixtureId": 17952170,
+  "hedgeTransactions": [],
+  "inventoryAfter": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "inventoryBefore": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "marketStateHash": "hash0104",
+  "newState": "WITHDRAW",
+  "policyHash": "raven-v1.0.0",
+  "previousState": "CAUTION",
+  "quotesCancelled": 0,
+  "reason": "verified PENALTY_AWARDED (seq #104) \u2014 cancel all quotes",
+  "receiptHash": "93bdf5aab5c63d646f208c75ec23a5a18a761b757056ec9a4593b9aa54219b7b",
+  "riskScore": 0.458128,
+  "txlineSequence": 104
+}
