@@ -178,6 +178,26 @@ python raven/dashboard.py
 # Opens on http://localhost:8050
 ```
 
+## Deploy (Render + Vercel)
+
+The SSE backend must run as a persistent Render web service. The static Control
+Room frontend is deployed separately to Vercel.
+
+1. Push the repository to GitHub.
+2. In Render, choose **New > Blueprint**, connect the repository, and deploy.
+   Render reads `render.yaml`; no manual build or start command is required.
+3. Confirm `https://<render-service>.onrender.com/healthz` returns
+   `{"status":"ok"}` and copy the service origin without a trailing slash.
+4. In Vercel, import the same repository. Add the environment variable
+   `RAVEN_API_BASE=https://<render-service>.onrender.com` for Production,
+   Preview, and Development.
+5. Deploy Vercel. The existing `vercel.json` builds the static site into
+   `public/` and injects the Render origin into `config.js`.
+
+When the Render URL or Vercel environment variable changes, redeploy Vercel so
+the generated frontend configuration is refreshed. The included replay demo
+needs no TxLINE or Solana secrets.
+
 ---
 
 ## TxLINE Endpoints Used
