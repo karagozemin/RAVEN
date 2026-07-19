@@ -1,0 +1,308 @@
+📋 PRODUCT REQUIREMENTS DOCUMENT (PRD)
+RAVEN — Real-time Autonomous Verifiable Exposure Neutralizer
+Field	Value
+Document version	1.0 (Final)
+Owner	Kaptan
+Status	Approved for build
+Target	TxODDS World Cup Hackathon — Trading Tools & Agents Track
+Deadline	July 19, 2026, 23:59 UTC
+Prize goal	1st Place — 10,000 USDT
+Last updated	2026-07-19
+1. OVERVIEW
+1.1 Problem Statement
+Live football markets move violently the instant a match state changes. When a goal, red card, penalty, or VAR overturn occurs, every connected market (1X2, Handicap, Total Goals, Correct Score) must reprice simultaneously. If even one quote stays stale for seconds, informed traders drain margin before a human trader can react. Traditional market-making bots either (a) predict direction naively and lose, or (b) quote statically and get picked off during event shocks.
+
+1.2 Solution
+RAVEN is an autonomous in-play market maker that earns spread under normal flow, and — the instant a cryptographically verified match event hits — withdraws quotes, neutralizes exposure across connected markets, then safely re-enters. Every quote, hedge, and risk action is anchored on Solana as a verifiable decision receipt.
+
+1.3 Core Value Proposition
+"We don't predict the match. We survive it — profitably, and verifiably."
+
+1.4 Success Criteria
+Primary: Win 1st place (49.5/50 target on judging rubric).
+Product: Demonstrate positive spread P&L under normal flow AND minimized loss during a verified event shock, in a single deterministic replay.
+Technical: All 5 judging criteria satisfied simultaneously in one demo.
+2. GOALS & NON-GOALS
+2.1 Goals
+#	Goal
+G1	Ingest live/replayed TxLINE odds, scores, and match events in real time
+G2	Autonomously quote bid/ask on 3 connected markets and earn spread
+G3	Detect verified event shocks and withdraw within milliseconds
+G4	Neutralize cross-market exposure via automated hedging
+G5	Anchor every critical decision as a verifiable receipt on Solana devnet
+G6	Provide deterministic replay so judges can observe the system live
+2.2 Non-Goals
+#	Non-Goal	Rationale
+N1	Real-money betting platform	Out of scope, legal risk, no time
+N2	Token / NFT / social features	Dilutes trading focus
+N3	LLM as decision-maker	LLM only explains decisions, never trades
+N4	Supporting all market types	Depth over breadth; 3 markets only
+N5	Full order-book DEX on mainnet	Simulated/devnet execution suffices
+N6	Heavy ML training pipeline	Deterministic model beats black box for judges
+3. USERS & PERSONAS
+Persona	Need	How RAVEN serves
+Sportsbook trading desk	Protect margin during live events	Shadow-mode agent that flags/executes withdrawals
+Prediction market operator	Keep markets solvent under shocks	Autonomous suspension + hedge
+B2B data intermediary	Prove data-driven decisions	On-chain audit trail via receipts
+Hackathon judge	Evaluate a real, working trading agent	Deterministic replay + verify.ts
+Primary persona for the demo narrative: Sportsbook trading desk running RAVEN in shadow mode.
+
+4. FUNCTIONAL REQUIREMENTS
+4.1 Feature List (prioritized)
+ID	Feature	Priority	Judging Criterion
+F1	Verified Feed Layer (TxLINE ingestion + hash/seq/anchor storage)	P0	Core Functionality
+F2	Fair-Value Engine (vig removal + event-hazard adjustment)	P0	Logic & Architecture
+F3	Quote Engine (bid/ask + inventory skew)	P0	Autonomous Operation
+F4	Risk Kernel / State Machine	P0	Autonomous Operation
+F5	Market Dependency Graph	P0	Innovation
+F6	Self-Hedging Engine (cross-market exposure neutralization)	P0	Innovation
+F7	Solana Decision Receipts + verify.ts	P0	Innovation / Production
+F8	Deterministic Replay & Counterfactual Lab	P0	Production Readiness
+F9	Adversarial Flow Detector	P1	Innovation
+F10	Live Control Room dashboard	P1	Demo quality
+F11	LLM Decision Inspector (human-readable explanations)	P2	Demo polish
+F12	@txline/sdk open-source package	P2	Ecosystem bonus
+P0 = must ship (winner-critical). P1 = strong differentiator. P2 = bonus if time allows.
+
+4.2 Detailed Requirements
+F1 — Verified Feed Layer
+FR1.1 Connect to TxLINE via async SSE/websocket (asyncio + websockets).
+FR1.2 Parse normalized JSON: fixture_id, match_time, score, odds, event_type, sequence, status_id, period.
+FR1.3 For each critical input, store {sequence, timestamp, payload_hash, solana_validation_ref}.
+FR1.4 Detect finalization via game_finalised, statusId=100, period=100.
+FR1.5 Support fallback to recorded replay feed if live stream is empty.
+Acceptance: Feed streams into system; every data point carries a verifiable reference; UI shows ✓ verified · seq #N.
+F2 — Fair-Value Engine
+FR2.1 Convert decimal odds → raw probability: 
+p
+r
+a
+w
+=
+1
+/
+odds
+p 
+raw
+​
+ =1/odds.
+FR2.2 Remove vig (multiplicative): 
+p
+f
+a
+i
+r
+,
+i
+=
+p
+r
+a
+w
+,
+i
+/
+∑
+p
+r
+a
+w
+p 
+fair,i
+​
+ =p 
+raw,i
+​
+ /∑p 
+raw
+​
+ .
+FR2.3 Apply event-hazard adjustment based on score, match_time, red cards using inhomogeneous/bivariate Poisson goal intensities.
+FR2.4 Constraint: Adjusted probability must not deviate from TxLINE consensus beyond a bounded threshold (model-risk cap).
+FR2.5 Do NOT use the term "theta decay"; model is event-hazard based.
+Acceptance: Reservation price computed = consensus + state adjustment + inventory + latency/vol premium.
+F3 — Quote Engine
+FR3.1 Continuously emit {bid, ask, max_size, expiry} per market.
+FR3.2 Apply inventory skew: shift quotes against over-held outcome.
+FR3.3 Widen spread when: event hazard ↑, feed latency ↑, volatility ↑, inventory imbalance, linked-market incoherence.
+FR3.4 Fractional Kelly sets capital-usage cap ONLY (does not generate quotes).
+Acceptance: Given fair prob 0.582 → outputs coherent bid/ask (e.g., 0.547 / 0.603) with visible skew and premium components.
+F4 — Risk Kernel / State Machine
+FR4.1 States: NORMAL → CAUTION → WITHDRAW → HEDGE → RECALIBRATE → REENTER.
+FR4.2 On verified critical event: cancel all open quotes, exit affected cluster, hedge exposure, wait for 3 consecutive stable updates, re-quote.
+FR4.3 Compute risk score:
+risk
+=
+0.30
+ 
+consensusDev
++
+0.25
+ 
+eventLatency
++
+0.20
+ 
+crossMarketIncoherence
++
+0.15
+ 
+exposure
++
+0.10
+ 
+feedConfidence
+risk=0.30consensusDev+0.25eventLatency+0.20crossMarketIncoherence+0.15exposure+0.10feedConfidence
+Acceptance: State transitions occur autonomously with zero manual input; each transition logged.
+F5 — Market Dependency Graph
+FR5.1 Represent each market as a node; event-driven relationships as edges.
+FR5.2 On event, verify all dependent markets moved in expected direction within acceptable latency.
+FR5.3 Flag stale linked markets (e.g., 1X2 updated but Handicap stale).
+Acceptance: Graph correctly identifies which markets a goal event should affect and detects lag.
+F6 — Self-Hedging Engine
+FR6.1 Treat all connected positions as one portfolio.
+FR6.2 Compute per-event shock exposure (home goal, away goal, red card, no-more-goal).
+FR6.3 Select hedge that minimizes: event-shock loss + inventory concentration + hedge cost, without eliminating spread revenue.
+FR6.4 Use concrete cross-market instruments (1X2↔Handicap, 1X2↔Double Chance, goal-shock↔Total Goals).
+Acceptance: After hedge, residual exposure materially reduced (demo: +12,480 → +930 USDC).
+F7 — Solana Decision Receipts
+FR7.1 For each critical decision, write receipt to Solana devnet (memo or Anchor program).
+FR7.2 Receipt schema: policyHash, txlineSequence, marketStateHash, inventoryBefore, action, reason, quotesCancelled, hedgeTransactions, inventoryAfter, executionTimestamp.
+FR7.3 Provide verify.ts for independent verification by judges.
+Acceptance: Judge runs verify.ts, confirms decision was made with claimed data at claimed time.
+F8 — Deterministic Replay & Counterfactual Lab
+FR8.1 Record TxLINE feeds during hackathon window.
+FR8.2 Replay at 1x–1000x with millisecond fidelity; agent reproduces identical decisions deterministically.
+FR8.3 Run Baseline MM (static, event-blind) vs RAVEN on same feed.
+FR8.4 Output real comparison metrics (never pre-picked showcase numbers).
+Acceptance: Judges observe live decision-making during review week despite no live matches.
+F9 — Adversarial Flow Detector (P1)
+FR9.1 Monitor trade behavior: repeated flow to agent's stale side, one-directional aggression pre-event, abnormal fill concentration.
+FR9.2 Response: reduce size → widen spread → shorten quote expiry → withdraw.
+F10 — Live Control Room (P1)
+FR10.1 All-black terminal + minimal web dashboard.
+FR10.2 Panels: live match, odds, score events, agent state, risk score, exposure, autonomous actions, dependency graph.
+5. NON-FUNCTIONAL REQUIREMENTS
+ID	Requirement	Target
+NFR1	Event-to-withdrawal latency	< 250 ms
+NFR2	Determinism	Same input → same output, 100%
+NFR3	Judge testability	No token purchase / deposit required
+NFR4	Uptime during demo	Replay must run flawlessly
+NFR5	Code clarity	Documented, clean, defensible logic
+NFR6	Data compliance	No raw TxLINE data redistribution
+NFR7	Branding	No FIFA marks / official sponsor imagery
+6. SYSTEM ARCHITECTURE
+┌─────────────────────────────────────────────────────────┐
+│                   TxLINE (SSE / Replay)                   │
+└───────────────────────────┬─────────────────────────────┘
+                            ▼
+              [F1] Verified Feed Layer
+              (seq · hash · anchor ref)
+                            ▼
+        ┌───────────────────┴───────────────────┐
+        ▼                                        ▼
+[F2] Fair-Value Engine              [F5] Market Dependency Graph
+ (vig removal +                     (node/edge coherence check)
+  event-hazard model)                          │
+        ▼                                        │
+[F3] Quote Engine  ◄─────── inventory skew ─────┤
+ (bid/ask/size/expiry)                           │
+        ▼                                        ▼
+[F4] Risk Kernel / State Machine ◄──── [F9] Adversarial Flow Detector
+ NORMAL→CAUTION→WITHDRAW→HEDGE→RECALIBRATE→REENTER
+        ▼
+[F6] Self-Hedging Engine (cross-market exposure neutralizer)
+        ▼
+[F7] Solana Decision Receipts ──► verify.ts
+        ▼
+[F8] Deterministic Replay & Counterfactual Lab
+        ▼
+[F10] Live Control Room + [F11] LLM Decision Inspector
+7. TECH STACK
+Layer	Technology
+Core engine	Python (asyncio + websockets)
+Feed	TxLINE SSE (live) + recorded replay (demo safety)
+On-chain	Solana devnet, Anchor framework
+Verification	TypeScript (verify.ts)
+Dashboard	Terminal UI + minimal web frontend
+Explanation	LLM (explanation only, not decision)
+Bonus package	@txline/sdk (open source)
+8. DATA MODEL
+8.1 TxLINE Input (normalized)
+json
+{
+  "fixture_id": 17952170,
+  "match_time": "67:14",
+  "score": {"home": 1, "away": 0},
+  "odds": {"home": 1.72, "draw": 3.60, "away": 5.40},
+  "event_type": "PENALTY_AWARDED",
+  "sequence": 428,
+  "status_id": 6,
+  "period": 2
+}
+8.2 Solana Decision Receipt
+json
+{
+  "policyHash": "raven-v1.0.0",
+  "txlineSequence": 428,
+  "marketStateHash": "0x...",
+  "inventoryBefore": "...",
+  "action": "CANCEL_AND_HEDGE",
+  "reason": "VERIFIED_PENALTY_EVENT",
+  "quotesCancelled": 14,
+  "hedgeTransactions": ["..."],
+  "inventoryAfter": "...",
+  "executionTimestamp": 1784412234981
+}
+9. MVP SCOPE
+Element	In MVP
+Markets	Match Winner 1X2 · Total Goals · Asian Handicap
+Events	Goal · Red Card · VAR overturn · Finalisation
+Execution	Simulated/devnet order book (Mock DEX class)
+Chain	Solana devnet receipts
+Demo	1 match, 3 markets, 1 strong event shock
+10. DELIVERABLES (submission checklist)
+ Demo video ≤5 min (Loom/YouTube) — hard screening gate
+ Public GitHub repo — commit history within hackathon dates
+ Deployed link OR working devnet endpoint — judge-testable, no deposit
+ Technical documentation — core idea + TxLINE endpoints used
+ FEEDBACK.md — latency measurements, schema suggestions, friction (full report)
+ verify.ts — independent receipt verification
+ New repo, new branding (no legacy project)
+ Human-authored architecture explanation (T&C §5.1 — agent-control risk)
+ LaTeX-documented formulas in README
+ No FIFA marks
+11. DEMO SCRIPT (5 min)
+Time	Content
+0:00–0:25	Problem — "MMs earn until the match changes; one stale quote drains margin."
+0:25–0:45	Solution — RAVEN + tagline
+0:45–2:20	Normal flow — split screen, spread micro-profits, verified badges
+2:20–3:20	Winner moment — penalty event → withdraw → shock exposure → hedge → reopen → receipt (show mechanism, NOT "spread 500%")
+3:20–4:20	Counterfactual — Baseline -5,120 vs RAVEN -180, + RAVEN spread P&L +1,460 before event
+4:20–5:00	Architecture + B2B — shadow mode + verify.ts live
+12. JUDGING RUBRIC MAPPING
+Criterion	Feature coverage	Target
+Core Functionality & Data	F1, F2	10/10
+Autonomous Operation	F3, F4	10/10
+Logic & Architecture	F2, F5, F6	10/10
+Innovation & Novelty	F5, F6, F7, F9	9.5/10
+Production Readiness	F7, F8, F10	10/10
+Total		49.5/50
+13. RISKS & MITIGATIONS
+Risk	Impact	Mitigation
+No live match during review	High	F8 deterministic replay
+Live TxLINE stream empty	High	Recorded replay fallback
+MM seen as "given idea" (novelty)	Medium	Emphasize event-aware self-hedging + receipts
+Perceived as agent-controlled entry	Medium	Human-authored docs + commit history
+Over-scoping kills MVP	High	Strict P0/P1/P2 discipline
+Fake-looking metrics	Medium	All numbers from real replay output
+14. BUILD SEQUENCE (dependency-ordered)
+F1 Verified Feed Layer + event detector (the pulse — everything depends on it)
+F2 Fair-Value Engine
+F3 Quote Engine
+F4 Risk Kernel / State Machine
+F6 Self-Hedging Engine
+F7 Solana Receipts + verify.ts
+F8 Replay & Counterfactual Lab
+F5/F9/F10/F11 Graph, adversarial, dashboard, LLM
+Demo video + README + FEEDBACK.md
