@@ -1,7 +1,7 @@
 {
   "action": "STATE_TRANSITION",
-  "anchorBackend": "null",
-  "anchored": false,
+  "anchorBackend": "memo",
+  "anchored": true,
   "executionTimestamp": 1784412005000,
   "fixtureId": 17952170,
   "hedgeTransactions": [],
@@ -15,5 +15,6 @@
   "reason": "quotes cancelled; neutralizing shock exposure",
   "receiptHash": "b66ee2d142590b2dad99e23ec0c1c6f0789099b1ae854585f9591649eae6a760",
   "riskScore": 0.598081,
-  "txlineSequence": 105
+  "txlineSequence": 105,
+  "solanaTx": "4L85kwtBQToWVRTuf1fetFCiiXMbevMAuHHr4uJ5h26NZnj9aYBckfXyrvMBJ9FPL991Has8apmnYVLCAWSYAx7"
 }

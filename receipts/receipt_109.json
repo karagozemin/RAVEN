@@ -1,7 +1,7 @@
 {
   "action": "STATE_TRANSITION",
-  "anchorBackend": "null",
-  "anchored": false,
+  "anchorBackend": "memo",
+  "anchored": true,
   "executionTimestamp": 1784412009000,
   "fixtureId": 17952170,
   "hedgeTransactions": [],
@@ -15,5 +15,6 @@
   "reason": "3 stable updates; re-entering",
   "receiptHash": "2120707b94ed6f10274496a7b0ddd61208dc14aa72f1c1701c647a57abfa53a5",
   "riskScore": 0.499177,
-  "txlineSequence": 109
+  "txlineSequence": 109,
+  "solanaTx": "4w5kAZdpe8Vs7jCPBxuE5u5s3r6d6kio5YdAgj8RWe6UD2GNVtjBSMP8TTdkLo7WeZte2AdtkTDMCNTnVvuM9RG5"
 }

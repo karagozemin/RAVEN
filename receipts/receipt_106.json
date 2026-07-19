@@ -1,7 +1,7 @@
 {
   "action": "STATE_TRANSITION",
-  "anchorBackend": "null",
-  "anchored": false,
+  "anchorBackend": "memo",
+  "anchored": true,
   "executionTimestamp": 1784412006000,
   "fixtureId": 17952170,
   "hedgeTransactions": [],
@@ -15,5 +15,6 @@
   "reason": "exposure neutralized; waiting for consensus to settle",
   "receiptHash": "acfb07ad552ba1fbaac5fd4a962805fab460a9f554654a442c03939592ab785f",
   "riskScore": 0.55481,
-  "txlineSequence": 106
+  "txlineSequence": 106,
+  "solanaTx": "4jB9Ac1GwVrNUrqMfbsoPxBPJLjuA9wiAMjXvdRzRKtNjKkEpqf2zjcrS7qNwpEyQkyVsrPmidofGqnVKb9FmyuV"
 }
