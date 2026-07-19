@@ -64,10 +64,20 @@ class RavenHandler(BaseHTTPRequestHandler):
     ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
+        # Allow the Vercel-hosted frontend to consume this backend cross-origin.
+        # EventSource never sends credentials, so a wildcard origin is safe here.
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "*")
         if extra:
             for k, v in extra.items():
                 self.send_header(k, v)
         self.end_headers()
+
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        # CORS preflight (browsers rarely preflight simple GETs, but be safe).
+        self._send_headers(204, "text/plain; charset=utf-8")
+
 
     def _serve_static(self, filename: str) -> None:
         path = os.path.join(_STATIC_DIR, filename)
@@ -131,6 +141,10 @@ class RavenHandler(BaseHTTPRequestHandler):
         if route == "/app.js":
             self._serve_static("app.js")
             return
+        if route == "/config.js":
+            self._serve_static("config.js")
+            return
+
         if route == "/styles.css":
             self._serve_static("styles.css")
             return

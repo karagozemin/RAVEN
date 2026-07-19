@@ -16,15 +16,17 @@ def main() -> int:
     )
     parser.add_argument(
         "--host",
-        default=os.environ.get("RAVEN_WEB_HOST", "127.0.0.1"),
-        help="Interface to bind (default: 127.0.0.1).",
+        default=os.environ.get("RAVEN_WEB_HOST", "0.0.0.0"),
+        help="Interface to bind (default: 0.0.0.0 for container hosts).",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get("RAVEN_WEB_PORT", "8787")),
-        help="Port to listen on (default: 8787).",
+        # Render/Railway/Fly inject the port to bind via $PORT.
+        default=int(os.environ.get("PORT", os.environ.get("RAVEN_WEB_PORT", "8787"))),
+        help="Port to listen on (default: $PORT or 8787).",
     )
+
     args = parser.parse_args()
     serve(host=args.host, port=args.port)
     return 0

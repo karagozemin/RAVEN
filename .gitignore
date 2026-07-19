@@ -30,6 +30,12 @@ _keys/
 # Data — real TxLINE recordings stay local, not in git
 data/
 recordings/
+# Exception: the historical replay used by the Web Control Room MUST ship
+# so the Render backend can serve /stream.
+!data/
+!data/replay/
+!data/replay/scores_historical_18222446.jsonl
+
 
 # Temp / generated scripts
 txline_auth.mjs

@@ -4,6 +4,11 @@
  * ---------------------------------------------------------------- */
 "use strict";
 
+/* Backend base URL. Empty string = same-origin (local dev / single-service).
+ * On Vercel we serve config.js which sets window.RAVEN_API_BASE to the
+ * Render backend URL, e.g. "https://raven-xxxx.onrender.com". */
+const API_BASE = (window.RAVEN_API_BASE || "").replace(/\/+$/, "");
+
 const $ = (id) => document.getElementById(id);
 
 const el = {
@@ -252,7 +257,10 @@ function start() {
   el.receiptCount.textContent = "0";
 
   const speed = el.speed.value || "12";
-  source = new EventSource(`/stream?speed=${encodeURIComponent(speed)}`);
+  source = new EventSource(
+    `${API_BASE}/stream?speed=${encodeURIComponent(speed)}`
+  );
+
 
   source.onopen = () => setConnection(true);
 
