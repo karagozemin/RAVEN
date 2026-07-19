@@ -129,7 +129,7 @@ class DecisionReceipt:
             "reason": self.reason,
             "fixtureId": self.fixture_id,
             "txlineSequence": self.txline_sequence,
-            "marketStateHash": self.market_state_hash,
+            "marketStateHash": self.commitment(),
             "riskScore": _fmt_float(self.risk_score),
             "previousState": self.previous_state,
             "newState": self.new_state,
@@ -140,6 +140,22 @@ class DecisionReceipt:
             "executionTimestamp": self.execution_timestamp,
             "policyHash": self.policy_version,
         }
+
+    def commitment(self) -> str:
+        """5-field commitment hash — matches ``computeCommitment`` in verify.ts.
+
+        SHA-256 of: policyHash | txlineSequence | action | reason | executionTimestamp
+        This is what goes into the Solana Memo and into ``marketStateHash`` so
+        verify.ts can recompute and confirm it independently.
+        """
+        raw = "|".join([
+            self.policy_version,
+            str(self.txline_sequence),
+            self.action.value,
+            self.reason,
+            str(self.execution_timestamp),
+        ])
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def hash(self) -> str:
         """Deterministic SHA-256 of this receipt's canonical payload."""

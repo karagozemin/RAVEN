@@ -102,35 +102,22 @@ class MemoAnchor:
         self._client = None  # lazily constructed
         self._signer = None
 
-    def _ensure_client(self) -> None:
-        """Build the RPC client + signer on first use.
-
-        Kept out of ``__init__`` so constructing a MemoAnchor never fails just
-        because the optional Solana deps aren't installed — it only matters at
-        the moment we actually try to write.
-        """
-        if self._client is not None:
+    def _ensure_signer(self) -> None:
+        """Build the signer on first use (lazy, no network call)."""
+        if self._signer is not None:
             return
         try:
-            from solana.rpc.api import Client  # type: ignore
             from solders.keypair import Keypair  # type: ignore
         except ImportError as exc:  # pragma: no cover - env dependent
             raise RuntimeError(
-                "MemoAnchor requires 'solana' and 'solders'. Install them or use "
-                "NullAnchor for development."
+                "MemoAnchor requires 'solders'. Install it or use NullAnchor."
             ) from exc
-
-        self._client = Client(self.rpc_url)
         if self.keypair_path and os.path.exists(self.keypair_path):
             with open(self.keypair_path, "r", encoding="utf-8") as fh:
                 import json
-
                 secret = json.load(fh)
             self._signer = Keypair.from_bytes(bytes(secret))
         else:
-            # No funded key available — generate an ephemeral one. It won't be
-            # able to pay fees, so anchoring will fail gracefully and fall back
-            # to hash-only. Better than crashing the trading loop.
             self._signer = Keypair()
             logger.warning(
                 "MemoAnchor: no keypair at %s; using ephemeral (unfunded) key. "
@@ -138,34 +125,54 @@ class MemoAnchor:
                 self.keypair_path,
             )
 
+    @staticmethod
+    def _rpc(rpc_url: str, method: str, params=None):
+        import json as _json
+        import urllib.request as _urllib
+        body = _json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params or []}).encode()
+        req = _urllib.Request(rpc_url, data=body, headers={"Content-Type": "application/json"})
+        with _urllib.urlopen(req, timeout=30) as resp:
+            data = _json.loads(resp.read())
+        if "error" in data:
+            raise RuntimeError(f"RPC {method} error: {data['error']}")
+        return data["result"]
+
     def anchor(self, receipt: DecisionReceipt) -> AnchorResult:
         h = receipt.hash()
         try:
-            self._ensure_client()
+            self._ensure_signer()
+            import base64
             from solders.pubkey import Pubkey  # type: ignore
             from solders.instruction import Instruction, AccountMeta  # type: ignore
-            from solders.message import Message  # type: ignore
-            from solders.transaction import Transaction  # type: ignore
+            from solders.hash import Hash  # type: ignore
+            from solders.message import MessageV0  # type: ignore
+            from solders.transaction import VersionedTransaction  # type: ignore
 
             memo_program = Pubkey.from_string(self.MEMO_PROGRAM_ID)
-            # Prefix keeps our txns filterable in an explorer / indexer.
-            memo_data = f"RAVEN:{h}".encode("utf-8")
+            memo_data = f"RAVEN:{receipt.commitment()}".encode("utf-8")
             signer_pubkey = self._signer.pubkey()  # type: ignore[union-attr]
             ix = Instruction(
                 program_id=memo_program,
                 data=memo_data,
                 accounts=[AccountMeta(pubkey=signer_pubkey, is_signer=True, is_writable=False)],
             )
-            blockhash = self._client.get_latest_blockhash().value.blockhash  # type: ignore[union-attr]
-            msg = Message.new_with_blockhash([ix], signer_pubkey, blockhash)
-            tx = Transaction([self._signer], msg, blockhash)  # type: ignore[list-item]
-            resp = self._client.send_transaction(tx)  # type: ignore[union-attr]
-            sig = str(resp.value)
+            bh_result = self._rpc(self.rpc_url, "getLatestBlockhash", [{"commitment": self.commitment}])
+            blockhash = Hash.from_string(bh_result["value"]["blockhash"])
+            msg = MessageV0.try_compile(
+                payer=signer_pubkey,
+                instructions=[ix],
+                address_lookup_table_accounts=[],
+                recent_blockhash=blockhash,
+            )
+            tx = VersionedTransaction(msg, [self._signer])  # type: ignore[list-item]
+            tx_bytes = base64.b64encode(bytes(tx)).decode()
+            sig = str(self._rpc(self.rpc_url, "sendTransaction", [
+                tx_bytes,
+                {"encoding": "base64", "preflightCommitment": self.commitment, "maxRetries": 3},
+            ]))
             logger.info("MemoAnchor: receipt %s anchored in tx %s", h[:12], sig)
             return AnchorResult(hash=h, signature=sig, anchored=True, backend=self.backend)
         except Exception as exc:  # noqa: BLE001 - anchoring must never break trading
-            # Best-effort: log, keep the hash, carry on. The receipt is still
-            # provable; it just isn't confirmed on-chain yet.
             logger.warning("MemoAnchor: on-chain write failed (%s); hash retained", exc)
             return AnchorResult(hash=h, signature=None, anchored=False, backend=self.backend)
 

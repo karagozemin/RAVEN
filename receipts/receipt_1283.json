@@ -1,0 +1,20 @@
+{
+  "action": "STATE_TRANSITION",
+  "anchorBackend": "memo",
+  "anchored": true,
+  "executionTimestamp": 1783827755290,
+  "fixtureId": 18222446,
+  "hedgeTransactions": [],
+  "inventoryAfter": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "inventoryBefore": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "marketStateHash": "4fa7340c09be85f3dd25ddf4fa63031eeb5d609545e5bc791bbcf8cb0e47bc96",
+  "newState": "RECALIBRATE",
+  "policyHash": "raven-v1.0.0",
+  "previousState": "HEDGE",
+  "quotesCancelled": 0,
+  "reason": "exposure neutralized; waiting for consensus to settle",
+  "receiptHash": "4fa7340c09be85f3dd25ddf4fa63031eeb5d609545e5bc791bbcf8cb0e47bc96",
+  "riskScore": 0.0,
+  "solanaTx": "24xdZNBREmZuciEh7U4q6TXFhAtdjHceWz1YgeBKJsaMwker5unzqwNB3v5es4xivRQ7URvQR2pqf5MfKPXXqrLq",
+  "txlineSequence": 1283
+}

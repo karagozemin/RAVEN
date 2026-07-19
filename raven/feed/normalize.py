@@ -85,7 +85,7 @@ def _classify(
     odds: Optional[OddsSnapshot],
     event_type: MatchEventType,
 ) -> FrameKind:
-    raw_kind = _first(payload, "type", "kind", "messageType", "channel")
+    raw_kind = _first(payload, "Type", "type", "kind", "messageType", "channel")
     if raw_kind:
         rk = str(raw_kind).strip().lower()
         if "odd" in rk or "price" in rk:
@@ -117,14 +117,15 @@ def normalize(
     ``fallback_sequence`` is used only when the payload carries no native
     sequence, preserving a strictly increasing order for deterministic replay.
     """
+    # TxLINE PascalCase fields: Seq, Ts, FixtureId, StatusId, Clock, Type
     sequence = _to_int(
-        _first(payload, "sequence", "seq", "sequenceNumber")
+        _first(payload, "Seq", "sequence", "seq", "sequenceNumber")
     )
     if sequence is None:
         sequence = fallback_sequence
 
     timestamp_ms = _to_int(
-        _first(payload, "timestamp", "ts", "timestampMs", "time")
+        _first(payload, "Ts", "timestamp", "ts", "timestampMs", "time")
     )
     if timestamp_ms is None:
         timestamp_ms = int(time.time() * 1000)
@@ -132,9 +133,9 @@ def normalize(
     if timestamp_ms < 1_000_000_000_000:
         timestamp_ms *= 1000
 
-    fixture_id = _to_int(_first(payload, "fixture_id", "fixtureId", "fixture"))
+    fixture_id = _to_int(_first(payload, "FixtureId", "fixture_id", "fixtureId", "fixture"))
     event_type = MatchEventType.from_raw(
-        str(_first(payload, "event_type", "eventType", "event") or "")
+        str(_first(payload, "Action", "event_type", "eventType", "event", "Type") or "").upper()
     )
     score = _extract_score(payload)
     odds = _extract_odds(payload)
@@ -151,10 +152,10 @@ def normalize(
         odds=odds,
         event_type=event_type,
         match_time=(
-            str(_first(payload, "match_time", "matchTime", "clock") or "")
+            str(_first(payload, "Clock", "match_time", "matchTime", "clock") or "")
             or None
         ),
-        status_id=_to_int(_first(payload, "status_id", "statusId", "status")),
+        status_id=_to_int(_first(payload, "StatusId", "status_id", "statusId", "status")),
         period=_to_int(_first(payload, "period", "phase")),
         raw=dict(payload),
     )

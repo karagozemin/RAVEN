@@ -1,0 +1,20 @@
+{
+  "action": "WITHDRAW",
+  "anchorBackend": "memo",
+  "anchored": true,
+  "executionTimestamp": 1783827669666,
+  "fixtureId": 18222446,
+  "hedgeTransactions": [],
+  "inventoryAfter": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "inventoryBefore": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "marketStateHash": "f4eb6e33cfacf078f65c6d4e9eae6afae2f0567482cce64513b8a734a990d097",
+  "newState": "WITHDRAW",
+  "policyHash": "raven-v1.0.0",
+  "previousState": "NORMAL",
+  "quotesCancelled": 0,
+  "reason": "verified GOAL (seq #1281) \u2014 cancel all quotes",
+  "receiptHash": "f4eb6e33cfacf078f65c6d4e9eae6afae2f0567482cce64513b8a734a990d097",
+  "riskScore": 0.29,
+  "solanaTx": "5iQ7xUMCwGVYf8ZAVMpezNMZPMnL8Ct598cb1PxBTbWZgpEgz2uHU1qnCsGKy4RbxUjkjEiYUfLBTS7eg9YJCSuE",
+  "txlineSequence": 1281
+}
