@@ -13,6 +13,7 @@ const $ = (id) => document.getElementById(id);
 
 const el = {
   landing: $("landing"),
+  transitionOverlay: $("transitionOverlay"),
   homeBtn: $("homeBtn"),
   logoHomeBtn: $("logoHomeBtn"),
   fixtureId: $("fixtureId"),
@@ -51,6 +52,10 @@ const el = {
 };
 
 const appViews = Array.from(document.querySelectorAll(".app-view"));
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+let viewTransitioning = false;
+let waitingForHistory = false;
 
 function renderAppView(open) {
   document.body.classList.toggle("control-room-open", open);
@@ -60,19 +65,59 @@ function renderAppView(open) {
   if (!open) stop();
 }
 
-function openControlRoom() {
+async function coverView() {
+  if (reducedMotion) return;
+  el.transitionOverlay.setAttribute("aria-hidden", "false");
+  el.transitionOverlay.className = "transition-overlay";
+  void el.transitionOverlay.offsetWidth;
+  el.transitionOverlay.classList.add("is-covering");
+  await wait(720);
+}
+
+async function revealView(open) {
+  const entryClass = open ? "view-entering-control" : "view-entering-landing";
+  document.body.classList.add(entryClass);
+  if (!reducedMotion) {
+    el.transitionOverlay.className = "transition-overlay is-revealing";
+    await wait(440);
+  }
+  el.transitionOverlay.className = "transition-overlay";
+  el.transitionOverlay.setAttribute("aria-hidden", "true");
+  await wait(reducedMotion ? 0 : 180);
+  document.body.classList.remove(entryClass);
+}
+
+async function transitionToView(open) {
+  if (viewTransitioning) return;
+  viewTransitioning = true;
+  await coverView();
+  renderAppView(open);
+  await revealView(open);
+  viewTransitioning = false;
+}
+
+async function openControlRoom() {
+  if (viewTransitioning) return;
+  viewTransitioning = true;
+  await coverView();
   renderAppView(true);
   if (window.location.hash !== "#control-room") {
     history.pushState({ ravenView: "control-room" }, "", "#control-room");
   }
+  await revealView(true);
+  viewTransitioning = false;
 }
 
-function returnToLanding() {
-  if (window.location.hash === "#control-room") {
-    history.back();
+async function returnToLanding() {
+  if (viewTransitioning) return;
+  if (window.location.hash !== "#control-room") {
+    await transitionToView(false);
     return;
   }
-  renderAppView(false);
+  viewTransitioning = true;
+  await coverView();
+  waitingForHistory = true;
+  history.back();
 }
 
 document.querySelectorAll("[data-enter-app]").forEach((button) => {
@@ -82,9 +127,46 @@ document.querySelectorAll("[data-enter-app]").forEach((button) => {
 el.homeBtn.addEventListener("click", returnToLanding);
 el.logoHomeBtn.addEventListener("click", returnToLanding);
 
-window.addEventListener("popstate", () => {
-  renderAppView(window.location.hash === "#control-room");
+window.addEventListener("popstate", async () => {
+  const open = window.location.hash === "#control-room";
+  if (waitingForHistory) {
+    waitingForHistory = false;
+    renderAppView(open);
+    await revealView(open);
+    viewTransitioning = false;
+    return;
+  }
+  await transitionToView(open);
 });
+
+document.querySelectorAll('a[href^="#"]').forEach((link) => {
+  link.addEventListener("click", (event) => {
+    const target = document.querySelector(link.getAttribute("href"));
+    if (!target || document.body.classList.contains("control-room-open")) return;
+    event.preventDefault();
+    target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+  });
+});
+
+const revealTargets = document.querySelectorAll(
+  ".system-band, .posture-band, .landing-cta"
+);
+if (reducedMotion || !("IntersectionObserver" in window)) {
+  revealTargets.forEach((node) => node.classList.add("is-visible"));
+} else {
+  revealTargets.forEach((node) => node.classList.add("motion-reveal"));
+  const revealObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("is-visible");
+        revealObserver.unobserve(entry.target);
+      });
+    },
+    { threshold: 0.12 }
+  );
+  revealTargets.forEach((node) => revealObserver.observe(node));
+}
 
 let source = null;
 let running = false;
