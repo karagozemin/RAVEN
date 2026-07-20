@@ -3,15 +3,121 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RAVEN · Control Room</title>
+  <title>RAVEN · Event-Aware Market Making</title>
   <link rel="icon" href="/raven.png" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
 
+  <div id="landing" class="landing">
+    <nav class="landing-nav" aria-label="Primary navigation">
+      <a class="landing-brand" href="#top" aria-label="RAVEN home">
+        <img src="/raven.png" alt="" />
+        <span>RAVEN</span>
+      </a>
+      <div class="landing-nav-links">
+        <a href="#system">System</a>
+        <a href="#principles">Principles</a>
+        <button class="nav-enter" type="button" data-enter-app>Open Control Room</button>
+      </div>
+    </nav>
+
+    <main id="top" class="landing-main">
+      <section class="landing-hero" aria-labelledby="landing-title">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="live-dot"></span> Event-aware market making</div>
+          <h1 id="landing-title">RAVEN</h1>
+          <p class="hero-definition">Real-time Autonomous Verifiable Exposure Neutralizer</p>
+          <p class="hero-lead">Built for the instant a live football market changes.</p>
+          <div class="hero-actions">
+            <button class="primary-enter" type="button" data-enter-app>
+              Enter Control Room <span aria-hidden="true">→</span>
+            </button>
+            <a class="text-link" href="#system">Explore the system <span aria-hidden="true">↓</span></a>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-hidden="true">
+          <div class="visual-axis axis-x"></div>
+          <div class="visual-axis axis-y"></div>
+          <div class="visual-readout readout-top"><span>FEED</span><b>VERIFIED</b></div>
+          <div class="visual-readout readout-bottom"><span>POSTURE</span><b>NORMAL</b></div>
+          <img src="/raven.png" alt="" />
+          <div class="visual-sequence">TXLINE / SEQ 001285</div>
+        </div>
+
+        <div class="hero-proof" aria-label="System summary">
+          <div><span>01</span><strong>PRICE</strong><small>Bounded fair value</small></div>
+          <div><span>02</span><strong>PROTECT</strong><small>Withdraw and hedge</small></div>
+          <div><span>03</span><strong>PROVE</strong><small>Decision receipts</small></div>
+        </div>
+      </section>
+
+      <section id="system" class="system-band">
+        <div class="section-index">01 / SYSTEM</div>
+        <div class="section-heading">
+          <h2>One pipeline.<br />Three responsibilities.</h2>
+          <p>RAVEN prices the market in normal flow, protects the portfolio during event shocks, and records the reason behind every material action.</p>
+        </div>
+        <div class="system-flow">
+          <article>
+            <div class="flow-top"><span>01</span><i></i></div>
+            <h3>Price</h3>
+            <p>Remove vig, model match-state hazard, and publish inventory-aware bid and ask quotes.</p>
+            <code>CONSENSUS → FAIR VALUE → QUOTE</code>
+          </article>
+          <article>
+            <div class="flow-top"><span>02</span><i></i></div>
+            <h3>Protect</h3>
+            <p>Withdraw stale liquidity, evaluate correlated exposure, and hedge the worst event scenario.</p>
+            <code>WITHDRAW → HEDGE → RECALIBRATE</code>
+          </article>
+          <article>
+            <div class="flow-top"><span>03</span><i></i></div>
+            <h3>Prove</h3>
+            <p>Bind the feed sequence, state transition, risk score, and action into a canonical receipt.</p>
+            <code>ACTION → HASH → ANCHOR</code>
+          </article>
+        </div>
+      </section>
+
+      <section id="principles" class="posture-band">
+        <div class="section-index">02 / CONTROL LOGIC</div>
+        <div class="posture-layout">
+          <div>
+            <h2>Exit first.<br />Recover with evidence.</h2>
+            <p>A verified shock bypasses prediction. Quotes come down, exposure is neutralized, and re-entry waits for stable consensus.</p>
+          </div>
+          <ol class="state-track" aria-label="RAVEN risk states">
+            <li><span>01</span><b>NORMAL</b><small>Two-sided quoting</small></li>
+            <li><span>02</span><b>WITHDRAW</b><small>Cancel stale liquidity</small></li>
+            <li><span>03</span><b>HEDGE</b><small>Reduce shock exposure</small></li>
+            <li><span>04</span><b>RECALIBRATE</b><small>Await stable updates</small></li>
+            <li><span>05</span><b>REENTER</b><small>Quote the new state</small></li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="landing-cta">
+        <div>
+          <span>DETERMINISTIC REPLAY / READY</span>
+          <h2>Watch the agent make the decision.</h2>
+        </div>
+        <button class="primary-enter" type="button" data-enter-app>
+          Launch Control Room <span aria-hidden="true">→</span>
+        </button>
+      </section>
+    </main>
+
+    <footer class="landing-footer">
+      <span>RAVEN / TXODDS WORLD CUP HACKATHON 2026</span>
+      <span>TXLINE DATA · SOLANA RECEIPTS</span>
+    </footer>
+  </div>
+
   <!-- ── Top bar ─────────────────────────────────────────────── -->
-  <header class="topbar">
+  <header class="topbar app-view" aria-hidden="true">
     <div class="brand">
       <img src="/raven.png" alt="RAVEN" class="logo" />
       <div class="brand-text">
@@ -29,6 +135,7 @@
     </div>
 
     <div class="controls">
+      <button id="homeBtn" class="icon-home" type="button" title="Back to overview" aria-label="Back to overview">←</button>
       <label class="speed">
         <span>SPEED</span>
         <select id="speed">
@@ -45,7 +152,7 @@
   </header>
 
   <!-- ── State banner ────────────────────────────────────────── -->
-  <section id="stateBanner" class="state-banner state-idle">
+  <section id="stateBanner" class="state-banner state-idle app-view" aria-hidden="true">
     <div class="state-main">
       <span class="state-label">AGENT STATE</span>
       <span id="stateValue" class="state-value">IDLE</span>
@@ -59,7 +166,7 @@
   </section>
 
   <!-- ── Main grid ───────────────────────────────────────────── -->
-  <main class="grid">
+  <main class="grid app-view" aria-hidden="true">
     <!-- Score / market -->
     <section class="card card-score">
       <h2 class="card-title">MATCH</h2>
@@ -134,7 +241,7 @@
     </section>
   </main>
 
-  <footer class="statusbar">
+  <footer class="statusbar app-view" aria-hidden="true">
     <span id="connDot" class="conn-dot conn-off"></span>
     <span id="connText">Disconnected</span>
     <span class="dot">·</span>

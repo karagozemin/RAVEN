@@ -12,6 +12,8 @@ const API_BASE = (window.RAVEN_API_BASE || "").replace(/\/+$/, "");
 const $ = (id) => document.getElementById(id);
 
 const el = {
+  landing: $("landing"),
+  homeBtn: $("homeBtn"),
   fixtureId: $("fixtureId"),
   matchTime: $("matchTime"),
   speed: $("speed"),
@@ -43,6 +45,27 @@ const el = {
   seqNum: $("seqNum"),
   provText: $("provText"),
 };
+
+const appViews = Array.from(document.querySelectorAll(".app-view"));
+
+function setAppView(open) {
+  document.body.classList.toggle("control-room-open", open);
+  el.landing.setAttribute("aria-hidden", String(open));
+  appViews.forEach((node) => node.setAttribute("aria-hidden", String(!open)));
+  window.scrollTo(0, 0);
+  if (open) {
+    history.replaceState(null, "", "#control-room");
+  } else {
+    stop();
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }
+}
+
+document.querySelectorAll("[data-enter-app]").forEach((button) => {
+  button.addEventListener("click", () => setAppView(true));
+});
+
+el.homeBtn.addEventListener("click", () => setAppView(false));
 
 let source = null;
 let running = false;
@@ -303,3 +326,7 @@ el.startBtn.addEventListener("click", start);
 el.stopBtn.addEventListener("click", stop);
 
 setConnection(false);
+
+if (window.location.hash === "#control-room") {
+  setAppView(true);
+}
