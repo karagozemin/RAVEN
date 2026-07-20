@@ -148,6 +148,9 @@ class RavenHandler(BaseHTTPRequestHandler):
         if route == "/styles.css":
             self._serve_static("styles.css")
             return
+        if route == "/control-room.css":
+            self._serve_static("control-room.css")
+            return
         if route in ("/raven.png", "/favicon.ico"):
             self._serve_logo()
             return

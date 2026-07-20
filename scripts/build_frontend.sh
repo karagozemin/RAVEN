@@ -20,6 +20,7 @@ mkdir -p "$OUT"
 cp "$SRC/index.html" "$OUT/index.html"
 cp "$SRC/app.js"     "$OUT/app.js"
 cp "$SRC/styles.css" "$OUT/styles.css"
+cp "$SRC/control-room.css" "$OUT/control-room.css"
 
 # The frontend references /raven.png; ship the logo under that path.
 cp "$ROOT/RAVEN.png" "$OUT/raven.png"

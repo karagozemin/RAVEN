@@ -13,6 +13,7 @@
     .app-view { display: none; }
   </style>
   <link rel="stylesheet" href="/styles.css?v=20260720-2" />
+  <link rel="stylesheet" href="/control-room.css?v=20260720-3" />
 </head>
 <body>
   <div class="scanlines" aria-hidden="true"></div>
@@ -123,28 +124,29 @@
     </footer>
   </div>
 
-  <!-- ── Top bar ─────────────────────────────────────────────── -->
   <header class="topbar app-view" aria-hidden="true">
     <div class="brand">
-      <img src="/raven.png" alt="RAVEN" class="logo" />
+      <img src="/raven.png" alt="" class="logo" />
       <div class="brand-text">
         <h1>RAVEN</h1>
-        <span class="tagline">Autonomous Market-Making · Control Room</span>
+        <span class="tagline">Decision Control Room</span>
       </div>
     </div>
 
+    <div class="run-status">
+      <span id="connDot" class="conn-dot conn-off"></span>
+      <div><small>DATA LINK</small><b id="connText">OFFLINE</b></div>
+    </div>
+
     <div class="fixture">
-      <span class="fixture-label">FIXTURE</span>
-      <span id="fixtureId" class="fixture-id">—</span>
-      <span class="dot">·</span>
-      <span class="fixture-label">CLOCK</span>
-      <span id="matchTime" class="fixture-clock">--:--</span>
+      <div><span class="fixture-label">FIXTURE</span><strong id="fixtureId" class="fixture-id">—</strong></div>
+      <div><span class="fixture-label">MATCH CLOCK</span><strong id="matchTime" class="fixture-clock">--:--</strong></div>
     </div>
 
     <div class="controls">
       <button id="homeBtn" class="icon-home" type="button" title="Back to overview" aria-label="Back to overview">←</button>
       <label class="speed">
-        <span>SPEED</span>
+        <span>REPLAY RATE</span>
         <select id="speed">
           <option value="6">0.5×</option>
           <option value="12" selected>1×</option>
@@ -153,116 +155,108 @@
           <option value="120">10×</option>
         </select>
       </label>
-      <button id="startBtn" class="btn btn-start">▶ START</button>
-      <button id="stopBtn" class="btn btn-stop" disabled>■ STOP</button>
+      <button id="startBtn" class="btn btn-start"><span class="play-icon" aria-hidden="true">▶</span> Run replay</button>
+      <button id="stopBtn" class="btn btn-stop" disabled><span aria-hidden="true">■</span> Stop</button>
     </div>
   </header>
 
-  <!-- ── State banner ────────────────────────────────────────── -->
   <section id="stateBanner" class="state-banner state-idle app-view" aria-hidden="true">
     <div class="state-main">
-      <span class="state-label">AGENT STATE</span>
+      <span class="state-label">CURRENT POSTURE</span>
       <span id="stateValue" class="state-value">IDLE</span>
     </div>
-    <div class="state-reason" id="stateReason">Press START to replay the live match feed.</div>
+    <div class="state-context">
+      <span class="state-context-label">DECISION RATIONALE</span>
+      <div class="state-reason" id="stateReason">Ready to process the recorded TxLINE match.</div>
+    </div>
+    <div id="stateTrack" class="state-track-app" aria-label="Risk state progression">
+      <span data-state="NORMAL">NORMAL</span>
+      <span data-state="CAUTION">CAUTION</span>
+      <span data-state="WITHDRAW">WITHDRAW</span>
+      <span data-state="HEDGE">HEDGE</span>
+      <span data-state="RECALIBRATE">RECALIBRATE</span>
+      <span data-state="REENTER">REENTER</span>
+    </div>
     <div class="risk-meter">
-      <span class="risk-label">RISK</span>
+      <div class="risk-copy"><span class="risk-label">RISK LOAD</span><strong id="riskValue" class="risk-value">0.0</strong></div>
       <div class="risk-track"><div id="riskFill" class="risk-fill"></div></div>
-      <span id="riskValue" class="risk-value">0.0</span>
     </div>
   </section>
 
-  <!-- ── Main grid ───────────────────────────────────────────── -->
   <main class="grid app-view" aria-hidden="true">
-    <!-- Score / market -->
     <section class="card card-score">
-      <h2 class="card-title">MATCH</h2>
+      <header class="card-head"><div><span class="panel-index">01</span><h2 class="card-title">Market context</h2></div><span class="panel-status">1X2</span></header>
+      <div class="score-meta"><span>HOME</span><span>LIVE SCORE</span><span>AWAY</span></div>
       <div class="scoreboard">
-        <div class="team">
-          <span class="team-name">HOME</span>
-          <span id="scoreHome" class="team-score">0</span>
-        </div>
+        <span id="scoreHome" class="team-score">0</span>
         <span class="score-sep">:</span>
-        <div class="team">
-          <span class="team-name">AWAY</span>
-          <span id="scoreAway" class="team-score">0</span>
-        </div>
+        <span id="scoreAway" class="team-score">0</span>
       </div>
+      <div class="odds-label">CONSENSUS DECIMAL ODDS</div>
       <div class="odds-row">
-        <div class="odds-cell"><span>1</span><b id="oddHome">—</b></div>
-        <div class="odds-cell"><span>X</span><b id="oddDraw">—</b></div>
-        <div class="odds-cell"><span>2</span><b id="oddAway">—</b></div>
+        <div class="odds-cell"><span>HOME / 1</span><b id="oddHome">—</b></div>
+        <div class="odds-cell"><span>DRAW / X</span><b id="oddDraw">—</b></div>
+        <div class="odds-cell"><span>AWAY / 2</span><b id="oddAway">—</b></div>
+      </div>
+      <div class="feed-proof">
+        <div><span>TICK</span><b id="tickNum">0</b></div>
+        <div><span>SEQUENCE</span><b id="seqNum">—</b></div>
+        <div><span>SOURCE</span><b>TXLINE</b></div>
       </div>
       <div class="event-flash" id="eventFlash"></div>
     </section>
 
-    <!-- Live quotes -->
     <section class="card card-quotes">
-      <h2 class="card-title">LIVE QUOTES <span id="quotesCount" class="pill">0</span></h2>
+      <header class="card-head">
+        <div><span class="panel-index">02</span><h2 class="card-title">Active quote book</h2></div>
+        <div class="quote-head-meta"><span id="quoteMode" class="market-open">STANDING BY</span><span id="quotesCount" class="pill">0</span></div>
+      </header>
       <div class="tablewrap">
         <table class="qtable">
-          <thead>
-            <tr><th>OUTCOME</th><th>BID</th><th>FAIR</th><th>ASK</th><th>SPREAD</th><th>SIZE</th></tr>
-          </thead>
-          <tbody id="quotesBody">
-            <tr class="empty"><td colspan="6">No active quotes</td></tr>
-          </tbody>
+          <thead><tr><th>OUTCOME</th><th>BID</th><th>FAIR</th><th>ASK</th><th>SPREAD</th><th>SIZE</th></tr></thead>
+          <tbody id="quotesBody"><tr class="empty"><td colspan="6">Run the replay to open the quote book</td></tr></tbody>
         </table>
       </div>
-      <div class="pnl-line">Realized spread P&amp;L <b id="spreadPnl">+0.000000</b></div>
-
+      <div class="pnl-line"><span>SIMULATED SPREAD CAPTURE</span><b id="spreadPnl">+0.000000</b></div>
     </section>
 
-    <!-- Exposure -->
     <section class="card card-exposure">
-      <h2 class="card-title">EXPOSURE</h2>
+      <header class="card-head"><div><span class="panel-index">03</span><h2 class="card-title">Portfolio exposure</h2></div><span id="exposureStatus" class="panel-status status-safe">FLAT</span></header>
       <div class="tablewrap">
-        <table class="qtable">
-          <thead>
-            <tr><th>OUTCOME</th><th>SIDE</th><th>QTY</th><th>AVG</th><th>NOTIONAL</th></tr>
-          </thead>
-          <tbody id="exposureBody">
-            <tr class="empty"><td colspan="5">Flat book</td></tr>
-          </tbody>
+        <table class="qtable compact-table">
+          <thead><tr><th>OUTCOME</th><th>SIDE</th><th>QTY</th><th>AVG</th><th>NOTIONAL</th></tr></thead>
+          <tbody id="exposureBody"><tr class="empty"><td colspan="5">No open exposure</td></tr></tbody>
         </table>
       </div>
       <div id="hedgeBox" class="hedge-box hidden">
-
-        <span class="hedge-title">⚡ HEDGE EXECUTED</span>
+        <span class="hedge-title">HEDGE PLAN EXECUTED</span>
         <span id="hedgeDetail" class="hedge-detail"></span>
       </div>
     </section>
 
-    <!-- Provenance / receipts -->
-    <section class="card card-receipts">
-      <h2 class="card-title">PROVENANCE LEDGER <span id="receiptCount" class="pill">0</span></h2>
-      <div id="receiptFeed" class="receipt-feed">
-        <div class="empty-feed">Signed decision receipts will stream here…</div>
-      </div>
+    <section class="card card-log">
+      <header class="card-head"><div><span class="panel-index">04</span><h2 class="card-title">Decision timeline</h2></div><span class="panel-status">LIVE</span></header>
+      <div class="log-columns"><span>SEQ</span><span>POSTURE</span><span>RATIONALE</span></div>
+      <div id="logFeed" class="log-feed"><div class="empty-feed">No decisions processed yet</div></div>
     </section>
 
-    <!-- Decision log -->
-    <section class="card card-log">
-      <h2 class="card-title">DECISION LOG</h2>
-      <div id="logFeed" class="log-feed"></div>
+    <section class="card card-receipts">
+      <header class="card-head">
+        <div><span class="panel-index">05</span><h2 class="card-title">Decision receipts</h2></div>
+        <div class="receipt-head-meta"><span>CANONICAL SHA-256</span><span id="receiptCount" class="pill">0</span></div>
+      </header>
+      <div id="receiptFeed" class="receipt-feed"><div class="empty-feed">Material decisions will be recorded here</div></div>
     </section>
   </main>
 
   <footer class="statusbar app-view" aria-hidden="true">
-    <span id="connDot" class="conn-dot conn-off"></span>
-    <span id="connText">Disconnected</span>
-    <span class="dot">·</span>
-    <span>TICK <b id="tickNum">0</b></span>
-    <span class="dot">·</span>
-    <span>SEQ <b id="seqNum">—</b></span>
-    <span class="dot">·</span>
-    <span id="provText" class="prov-text">—</span>
+    <span id="provText" class="prov-text">Waiting for verified sequence</span>
     <span class="spacer"></span>
-    <span class="src">real TxLINE replay · fixture 18222446</span>
+    <span class="src">RECORDED TXLINE INPUT</span><span class="footer-divider"></span><span>DETERMINISTIC DECISION CORE</span>
   </footer>
 
   <script src="/config.js?v=20260720-2"></script>
-  <script src="/app.js?v=20260720-2"></script>
+  <script src="/app.js?v=20260720-3"></script>
 
 </body>
 </html>

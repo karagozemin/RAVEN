@@ -11,7 +11,7 @@
       ]
     },
     {
-      "source": "/styles.css",
+      "source": "/(styles|control-room)\\.css",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
       ]

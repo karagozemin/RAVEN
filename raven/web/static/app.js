@@ -24,6 +24,7 @@ const el = {
   stateReason: $("stateReason"),
   riskFill: $("riskFill"),
   riskValue: $("riskValue"),
+  stateTrack: $("stateTrack"),
   scoreHome: $("scoreHome"),
   scoreAway: $("scoreAway"),
   oddHome: $("oddHome"),
@@ -32,8 +33,10 @@ const el = {
   eventFlash: $("eventFlash"),
   quotesBody: $("quotesBody"),
   quotesCount: $("quotesCount"),
+  quoteMode: $("quoteMode"),
   spreadPnl: $("spreadPnl"),
   exposureBody: $("exposureBody"),
+  exposureStatus: $("exposureStatus"),
   hedgeBox: $("hedgeBox"),
   hedgeDetail: $("hedgeDetail"),
   receiptFeed: $("receiptFeed"),
@@ -76,9 +79,11 @@ let flashTimer = null;
 
 const STATE_CLASS = {
   NORMAL: "state-normal",
-  WIDEN: "state-widen",
+  CAUTION: "state-caution",
   WITHDRAW: "state-withdraw",
-  HALT: "state-halt",
+  HEDGE: "state-hedge",
+  RECALIBRATE: "state-recalibrate",
+  REENTER: "state-reenter",
   IDLE: "state-idle",
 };
 
@@ -89,16 +94,20 @@ function fmt(n, d = 3) {
 
 function setConnection(on) {
   el.connDot.className = "conn-dot " + (on ? "conn-on" : "conn-off");
-  el.connText.textContent = on ? "Connected · streaming" : "Disconnected";
+  el.connText.textContent = on ? "STREAMING" : "OFFLINE";
 }
 
 /* ── Renderers ────────────────────────────────────────────────── */
 function renderState(t) {
   const state = t.state || "IDLE";
   el.stateBanner.className =
-    "state-banner " + (STATE_CLASS[state] || "state-idle");
+    "state-banner app-view " + (STATE_CLASS[state] || "state-idle");
   el.stateValue.textContent = state;
   el.stateReason.textContent = t.reason || "";
+
+  el.stateTrack.querySelectorAll("[data-state]").forEach((step) => {
+    step.classList.toggle("is-active", step.dataset.state === state);
+  });
 
   const risk = t.risk_score ?? 0;
   el.riskFill.style.width = Math.min(100, Math.max(0, risk)) + "%";
@@ -132,7 +141,7 @@ function flashEvent(t) {
   let text = "";
   let cls = "";
   if (t.event_type && t.event_type !== "OTHER") {
-    text = "⚽ " + t.event_type.replace(/_/g, " ");
+    text = "EVENT / " + t.event_type.replace(/_/g, " ");
     cls = t.is_shock ? "shock" : "goal";
   }
   if (!text) return;
@@ -146,6 +155,8 @@ function flashEvent(t) {
 
 function renderQuotes(t) {
   el.quotesCount.textContent = t.quotes_count ?? 0;
+  el.quoteMode.textContent = t.is_quoting ? "MARKET OPEN" : "QUOTES WITHDRAWN";
+  el.quoteMode.className = "market-open " + (t.is_quoting ? "is-open" : "is-closed");
   const rows = t.quotes || [];
   if (!rows.length) {
     el.quotesBody.innerHTML =
@@ -171,6 +182,8 @@ function renderQuotes(t) {
 
 function renderExposure(t) {
   const rows = t.exposure || [];
+  el.exposureStatus.textContent = rows.length ? `${rows.length} OPEN` : "FLAT";
+  el.exposureStatus.className = "panel-status " + (rows.length ? "" : "status-safe");
   if (!rows.length) {
     el.exposureBody.innerHTML =
       '<tr class="empty"><td colspan="5">Flat book — no open positions</td></tr>';
@@ -235,6 +248,8 @@ function renderReceipt(t) {
 }
 
 function renderLog(t) {
+  const empty = el.logFeed.querySelector(".empty-feed");
+  if (empty) empty.remove();
   const line = document.createElement("div");
   line.className =
     "log-line st-" +
@@ -275,9 +290,11 @@ function start() {
   receiptTotal = 0;
   lastScore = { home: 0, away: 0 };
   el.receiptFeed.innerHTML =
-    '<div class="empty-feed">Signed decision receipts will stream here…</div>';
-  el.logFeed.innerHTML = "";
+    '<div class="empty-feed">Material decisions will be recorded here</div>';
+  el.logFeed.innerHTML = '<div class="empty-feed">Waiting for the first decision</div>';
   el.receiptCount.textContent = "0";
+  el.quoteMode.textContent = "CONNECTING";
+  el.quoteMode.className = "market-open";
 
   const speed = el.speed.value || "12";
   source = new EventSource(
