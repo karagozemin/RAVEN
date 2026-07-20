@@ -4,7 +4,7 @@ from raven.agent import RavenAgent
 from raven.counterfactual import run_counterfactual
 from raven.provenance.anchor import ArchiveAnchor
 from raven.provenance.store import ReceiptEmitter
-from raven.web.driver import iter_verified_frames
+from raven.web.driver import iter_verified_frames, run_replay
 
 
 def _run(agent: RavenAgent | None = None) -> RavenAgent:
@@ -110,3 +110,16 @@ def test_counterfactual_uses_same_frames_and_reduces_peak_risk() -> None:
     assert result.peak_risk_reduction > 80.0
     assert result.baseline.manual_interventions == 3
     assert result.raven.manual_interventions == 0
+
+
+def test_web_receipt_exposes_clickable_proof_detail() -> None:
+    receipt = next(
+        tick["receipt"]
+        for tick in run_replay(speed=0, max_ticks=100)
+        if tick["receipt"] and tick["receipt"]["anchored"]
+    )
+    assert receipt["signature"]
+    assert receipt["detail"]["solanaTx"] == receipt["signature"]
+    assert receipt["detail"]["receiptHash"] == receipt["hash"]
+    assert len(receipt["detail"]["commitmentHash"]) == 64
+    assert len(receipt["detail"]["marketStateHash"]) == 64

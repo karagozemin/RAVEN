@@ -50,6 +50,18 @@ const el = {
   tickNum: $("tickNum"),
   seqNum: $("seqNum"),
   provText: $("provText"),
+  receiptDialog: $("receiptDialog"),
+  receiptDialogClose: $("receiptDialogClose"),
+  receiptDialogTitle: $("receiptDialogTitle"),
+  receiptDialogStatus: $("receiptDialogStatus"),
+  receiptDialogExplorer: $("receiptDialogExplorer"),
+  receiptDialogSequence: $("receiptDialogSequence"),
+  receiptDialogPolicy: $("receiptDialogPolicy"),
+  receiptDialogRisk: $("receiptDialogRisk"),
+  receiptDialogAction: $("receiptDialogAction"),
+  receiptDialogReason: $("receiptDialogReason"),
+  receiptDialogJson: $("receiptDialogJson"),
+  copyReceiptHash: $("copyReceiptHash"),
 };
 
 const appViews = Array.from(document.querySelectorAll(".app-view"));
@@ -176,6 +188,7 @@ let receiptTotal = 0;
 let fillTotal = 0;
 let lastScore = { home: 0, away: 0 };
 let flashTimer = null;
+let selectedReceiptHash = "";
 
 const STATE_CLASS = {
   NORMAL: "state-normal",
@@ -348,6 +361,9 @@ function renderReceipt(t) {
 
   const div = document.createElement("div");
   div.className = "receipt act-" + (r.action || "").toLowerCase();
+  div.tabIndex = 0;
+  div.setAttribute("role", "button");
+  div.setAttribute("aria-label", `Inspect ${r.action} receipt at sequence ${r.sequence}`);
   const anchored = r.anchored
     ? `<a class="anchored" href="https://explorer.solana.com/tx/${r.signature}?cluster=devnet" target="_blank" rel="noopener noreferrer">view devnet proof ↗</a>`
     : `<span class="unanchored">local · ${r.backend}</span>`;
@@ -365,11 +381,59 @@ function renderReceipt(t) {
       ${anchored}
     </div>`;
   el.receiptFeed.prepend(div);
+  div.addEventListener("click", (event) => {
+    if (event.target.closest("a")) return;
+    openReceiptDialog(r);
+  });
+  div.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openReceiptDialog(r);
+  });
 
   while (el.receiptFeed.children.length > 40) {
     el.receiptFeed.lastChild.remove();
   }
 }
+
+function openReceiptDialog(receipt) {
+  const detail = receipt.detail || {};
+  selectedReceiptHash = receipt.hash || detail.receiptHash || "";
+  el.receiptDialogTitle.textContent = receipt.action || "RECEIPT";
+  el.receiptDialogSequence.textContent = `#${receipt.sequence ?? "—"}`;
+  el.receiptDialogPolicy.textContent = detail.policyHash || "—";
+  el.receiptDialogRisk.textContent = fmt(receipt.risk_score, 4);
+  el.receiptDialogAction.textContent = `${receipt.previous_state} → ${receipt.new_state}`;
+  el.receiptDialogReason.textContent = receipt.reason || "—";
+  el.receiptDialogJson.textContent = JSON.stringify(detail, null, 2);
+  el.copyReceiptHash.textContent = "Copy receipt hash";
+
+  if (receipt.anchored && receipt.signature) {
+    el.receiptDialogStatus.textContent = `ANCHORED · ${receipt.backend}`;
+    el.receiptDialogStatus.className = "is-anchored";
+    el.receiptDialogExplorer.href = `https://explorer.solana.com/tx/${receipt.signature}?cluster=devnet`;
+    el.receiptDialogExplorer.hidden = false;
+  } else {
+    el.receiptDialogStatus.textContent = `LOCAL · ${receipt.backend}`;
+    el.receiptDialogStatus.className = "is-local";
+    el.receiptDialogExplorer.hidden = true;
+  }
+  el.receiptDialog.showModal();
+}
+
+el.receiptDialogClose.addEventListener("click", () => el.receiptDialog.close());
+el.receiptDialog.addEventListener("click", (event) => {
+  if (event.target === el.receiptDialog) el.receiptDialog.close();
+});
+el.copyReceiptHash.addEventListener("click", async () => {
+  if (!selectedReceiptHash) return;
+  try {
+    await navigator.clipboard.writeText(selectedReceiptHash);
+    el.copyReceiptHash.textContent = "Copied";
+  } catch (_) {
+    el.copyReceiptHash.textContent = selectedReceiptHash;
+  }
+});
 
 function renderLog(t) {
   const empty = el.logFeed.querySelector(".empty-feed");

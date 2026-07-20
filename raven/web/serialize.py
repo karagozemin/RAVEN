@@ -79,6 +79,14 @@ def receipt_to_json(anchored: Optional[AnchoredReceipt]) -> Optional[Dict[str, A
         return None
     r = anchored.receipt
     a = anchored.anchor
+    detail = {
+        **r.to_payload(),
+        "receiptHash": anchored.receipt_hash,
+        "anchorBackend": a.backend,
+        "anchored": bool(a.anchored),
+    }
+    if a.signature:
+        detail["solanaTx"] = a.signature
     return {
         "hash": anchored.receipt_hash,
         "action": r.action.value,
@@ -92,6 +100,7 @@ def receipt_to_json(anchored: Optional[AnchoredReceipt]) -> Optional[Dict[str, A
         "signature": a.signature,
         "anchored": bool(a.anchored),
         "backend": a.backend,
+        "detail": detail,
     }
 
 

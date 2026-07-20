@@ -572,7 +572,11 @@ body.control-room-open .receipt {
   border-bottom: 1px solid rgba(236, 239, 231, 0.08);
   border-left: 2px solid var(--app-blue);
   border-radius: 0;
+  cursor: pointer;
+  transition: background 0.16s ease;
 }
+body.control-room-open .receipt:hover { background: rgba(255, 255, 255, 0.025); }
+body.control-room-open .receipt:focus-visible { outline: 1px solid var(--app-signal); outline-offset: -2px; }
 body.control-room-open .receipt.act-withdraw { border-left-color: var(--app-red); }
 body.control-room-open .receipt.act-cancel_and_hedge { border-left-color: var(--app-blue); }
 body.control-room-open .receipt-head { margin-bottom: 5px; }
@@ -583,6 +587,46 @@ body.control-room-open .receipt-meta { margin-top: 6px; gap: 9px; color: var(--a
 body.control-room-open .receipt-meta .anchored { color: var(--app-signal); }
 body.control-room-open .receipt-meta a { text-decoration: none; }
 body.control-room-open .receipt-meta a:hover { text-decoration: underline; }
+
+.receipt-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+  padding: 0;
+  overflow: hidden;
+  color: #f0f2ed;
+  background: #0d100e;
+  border: 1px solid rgba(236, 239, 231, 0.24);
+  border-radius: 6px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.72);
+}
+.receipt-dialog::backdrop { background: rgba(2, 4, 3, 0.78); backdrop-filter: blur(5px); }
+.receipt-dialog-shell { max-height: min(760px, calc(100vh - 32px)); display: flex; flex-direction: column; }
+.receipt-dialog-head { min-height: 72px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(236, 239, 231, 0.13); }
+.receipt-dialog-label { color: #5f645e; font: 500 8px var(--mono); letter-spacing: 1.3px; }
+.receipt-dialog-head h2 { margin-top: 5px; color: #f0f2ed; font: 700 15px var(--mono); letter-spacing: 1px; }
+.receipt-dialog-close { width: 34px; height: 34px; padding: 0; color: #8d928b; background: transparent; border: 1px solid rgba(236, 239, 231, 0.13); border-radius: 3px; font-size: 22px; line-height: 1; cursor: pointer; }
+.receipt-dialog-close:hover { color: #f0f2ed; border-color: rgba(236, 239, 231, 0.28); }
+.receipt-dialog-proof { min-height: 42px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(236, 239, 231, 0.1); font: 600 9px var(--mono); letter-spacing: 0.8px; }
+.receipt-dialog-proof .is-anchored, .receipt-dialog-proof a { color: #b7ff4a; }
+.receipt-dialog-proof .is-local { color: #8d928b; }
+.receipt-dialog-proof a { text-decoration: none; }
+.receipt-dialog-proof a:hover { text-decoration: underline; }
+.receipt-dialog-facts { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid rgba(236, 239, 231, 0.13); }
+.receipt-dialog-facts div { min-width: 0; padding: 14px 18px; border-right: 1px solid rgba(236, 239, 231, 0.1); }
+.receipt-dialog-facts div:last-child { border-right: 0; }
+.receipt-dialog-facts dt, .receipt-dialog-reason span, .receipt-json-head > span { color: #5f645e; font: 500 7px var(--mono); letter-spacing: 0.9px; }
+.receipt-dialog-facts dd { margin-top: 7px; overflow: hidden; color: #d9dcd6; font: 600 10px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.receipt-dialog-reason { padding: 15px 18px; border-bottom: 1px solid rgba(236, 239, 231, 0.13); }
+.receipt-dialog-reason p { margin-top: 7px; color: #b7bbb4; font: 500 10px/1.5 var(--mono); }
+.receipt-json-head { min-height: 42px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; }
+.receipt-json-head button { padding: 6px 9px; color: #b7ff4a; background: transparent; border: 1px solid rgba(183, 255, 74, 0.3); border-radius: 3px; font: 500 8px var(--mono); cursor: pointer; }
+.receipt-dialog-json { min-height: 180px; margin: 0; padding: 16px 18px 22px; overflow: auto; color: #9eb9d8; background: #090b0a; border-top: 1px solid rgba(236, 239, 231, 0.1); font: 500 10px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 620px) {
+  .receipt-dialog-facts { grid-template-columns: 1fr 1fr; }
+  .receipt-dialog-facts div:nth-child(2) { border-right: 0; }
+  .receipt-dialog-facts div:nth-child(-n + 2) { border-bottom: 1px solid rgba(236, 239, 231, 0.1); }
+}
 
 body.control-room-open .empty-feed {
   padding: 28px 14px;
