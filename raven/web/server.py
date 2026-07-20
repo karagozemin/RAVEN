@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
@@ -36,6 +37,18 @@ _CONTENT_TYPES = {
     ".png": "image/png",
     ".ico": "image/x-icon",
 }
+
+
+@lru_cache(maxsize=1)
+def _counterfactual_payload() -> bytes:
+    from raven.counterfactual import run_counterfactual
+
+    result = run_counterfactual(print_result=False)
+    payload = result.to_dict()
+    payload["anchored_proofs"] = 4
+    payload["txline_onchain_proofs"] = 1
+    payload["onchain_proofs"] = 5
+    return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
 
 def _content_type(path: str) -> str:
@@ -158,6 +171,14 @@ class RavenHandler(BaseHTTPRequestHandler):
             self._send_headers(200, "application/json")
             self.wfile.write(b'{"status":"ok"}')
             return
+        if route == "/counterfactual":
+            self._send_headers(
+                200,
+                "application/json",
+                extra={"Cache-Control": "public, max-age=3600"},
+            )
+            self.wfile.write(_counterfactual_payload())
+            return
         if route == "/stream":
             qs = parse_qs(parsed.query)
             try:
@@ -179,7 +200,7 @@ def serve(host: str = "127.0.0.1", port: int = 8787) -> None:
     print("  RAVEN — Web Control Room")
     print("=" * 60)
     print(f"  Serving at   {url}")
-    print(f"  Feed         real TxLINE replay · fixture 18222446")
+    print("  Feed         real TxLINE replay · fixture 18222446")
     print(f"  Stream       {url}/stream")
     print("  Press Ctrl+C to stop.")
     print("=" * 60)

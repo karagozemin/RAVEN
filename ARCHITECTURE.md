@@ -1,337 +1,367 @@
 # RAVEN Architecture
 
-This document describes the implemented architecture of RAVEN: its runtime
-boundaries, decision path, state transitions, receipt model, and deployment topology.
-
-## Design Goals
-
-1. React to live football shocks without relying on manual intervention.
-2. Keep pricing, risk, and hedging deterministic and independently testable.
-3. Treat correlated markets as one portfolio rather than isolated books.
-4. Preserve enough provenance to reproduce and audit material decisions.
-5. Run the same decision pipeline against live and recorded TxLINE frames.
+This document describes the implemented runtime, not a target-state design.
+RAVEN has a deterministic decision core with network, simulated execution,
+persistence, Solana, and browser delivery isolated at explicit boundaries.
 
 ## System Context
 
 ```mermaid
 flowchart TB
-    TX[TxLINE] -->|live SSE| INGEST[RAVEN Feed Layer]
-    REC[(Recorded JSONL)] -->|deterministic replay| INGEST
-    INGEST --> CORE[RAVEN Decision Core]
-    CORE --> QUOTES[Simulated Quotes]
-    CORE --> HEDGES[Hedge Plans]
-    CORE --> RECEIPTS[Decision Receipts]
-    RECEIPTS --> STORE[(Local Receipt Store)]
-    RECEIPTS -. optional .-> SOL[Solana Devnet]
-    CORE --> API[SSE Web Server]
-    API --> UI[Control Room]
-    VERIFY[Independent verify.ts] --> SOL
+    TX[TxLINE API] -->|odds SSE + scores SSE| LIVE[LiveSSESource]
+    TX -->|historical score + odds intervals| RAW[(Real JSONL replay)]
+    LIVE --> REC[(Append-only recorder)]
+    LIVE --> N[Normalizer]
+    RAW --> MERGE[Timestamp merge + sampling]
+    MERGE --> N
+    N --> CORE[RavenAgent]
+    CORE --> BOOK[Quotes + inventory + hedges]
+    CORE --> RECEIPTS[Decision receipts]
+    RECEIPTS --> MEMO[Solana devnet Memo]
+    CORE --> SSE[HTTP / SSE API]
+    SSE --> UI[Vercel Control Room]
+    VERIFY[verify.ts] --> MEMO
+    TXPROOF[verify_txline.ts] --> TXROOT[TxLINE daily score root PDA]
 ```
 
-The core does not know whether a frame came from the network or a recording, and
-it does not know whether a receipt uses a null, memo, or Solana transaction anchor.
-Those boundaries are injected around the deterministic decision path.
+TxLINE is the market-data plane. RAVEN does not claim that TxLINE accepts
+orders. `SimulatedExecution` is an explicit adapter that makes inventory and
+hedging observable without implying exchange connectivity.
 
-## Component Architecture
+## Runtime Layers
 
 ```mermaid
 flowchart LR
-    subgraph Sources
-      LIVE[LiveSSESource]
-      REPLAY[ReplaySource]
-      RECORDER[Recorder]
-      LIVE --> RECORDER
-    end
-
     subgraph Feed
-      NORMALIZE[Normalizer]
-      FRAME[VerifiedFrame]
-      NORMALIZE --> FRAME
+      A[LiveSSESource / ReplaySource]
+      B[normalize]
+      C[VerifiedFrame]
+      A --> B --> C
     end
 
-    subgraph Agent[Frame-driven RavenAgent]
-      MATCH[MatchState]
-      FV[FairValueEngine]
-      SIGNALS[Risk Signals]
-      RISK[RiskKernel]
-      QUOTE[QuoteEngine]
-      INV[Inventory]
-      HEDGE[HedgeEngine]
-      EMIT[ReceiptEmitter]
+    subgraph DecisionCore[Deterministic Decision Core]
+      E[SimulatedExecution]
+      M[MatchState]
+      D[DependencyGraph]
+      T[AdversarialFlowDetector]
+      F[FairValueEngine]
+      R[RiskKernel]
+      Q[QuoteEngine]
+      I[Inventory]
+      H[HedgeEngine]
+      P[ReceiptEmitter]
 
-      FRAME --> MATCH
-      FRAME --> SIGNALS
-      MATCH --> FV
-      FV --> SIGNALS
-      SIGNALS --> RISK
-      RISK --> QUOTE
-      FV --> QUOTE
-      INV --> QUOTE
-      RISK --> HEDGE
-      INV <--> HEDGE
-      RISK --> EMIT
-      HEDGE --> EMIT
+      C --> E --> I
+      C --> M --> F
+      C --> D --> R
+      E --> T --> R
+      F --> R
+      I --> R
+      R --> Q
+      F --> Q
+      I --> Q
+      R --> H
+      I <--> H
+      R --> P
+      H --> P
     end
 
     subgraph Delivery
-      SERIALIZE[Tick Serializer]
-      SSE[SSE /stream]
-      BROWSER[Control Room]
-      SERIALIZE --> SSE --> BROWSER
+      J[Tick serializer] --> S[/stream SSE]
+      S --> W[Control Room]
+      K[/counterfactual JSON] --> W
     end
 
-    LIVE --> NORMALIZE
-    REPLAY --> NORMALIZE
-    QUOTE --> SERIALIZE
-    RISK --> SERIALIZE
-    HEDGE --> SERIALIZE
-    EMIT --> SERIALIZE
+    Q --> J
+    I --> J
+    H --> J
+    P --> J
 ```
 
-## Per-Frame Decision Sequence
+## Source Contracts
+
+`VerifiedFrame` is the only input accepted by the core. It carries:
+
+| Field | Meaning |
+| --- | --- |
+| `sequence` | Monotonic sequence inside the merged replay/live consumer |
+| `provider_sequence` | Native TxLINE `Seq`, when the endpoint provides one |
+| `timestamp_ms` | Provider event timestamp |
+| `payload_hash` | SHA-256 over canonical untouched provider payload |
+| `solana_validation_ref` | TxLINE proof reference when independently validated |
+| normalized payload | odds, score, event, clock, phase, finalization |
+
+Historical odds interval records do not expose a native `Seq`; they retain the
+payload hash and receive a monotonic replay sequence. Historical scores preserve
+their native TxLINE sequence separately. This avoids mixing two sequence domains.
+
+```mermaid
+sequenceDiagram
+    participant O as TxLINE odds history
+    participant S as TxLINE score history
+    participant M as Replay merger
+    participant N as Normalizer
+    participant A as RavenAgent
+
+    O->>M: raw odds records with Ts
+    S->>M: raw score/events with Ts + Seq
+    M->>M: filter target markets, sample, sort by Ts
+    M->>N: raw payload + monotonic replay index
+    N-->>A: VerifiedFrame + provider_sequence + payload_hash
+```
+
+The packaged fixture contains 8,375 downloaded odds records. The web driver
+selects changing full-match 1X2, AH `-0.5`, and O/U `2.5` snapshots at a stable
+cadence, merges enriched score events, and produces 1,976 frames.
+
+## Live Ingestion
+
+`LiveSSESource` maintains separate odds and scores stream tasks and merges them
+through an async queue. Both use the documented headers. A `401` obtains a fresh
+guest JWT and reconnects with bounded backoff. Every received payload is written
+before normalization.
+
+```mermaid
+flowchart LR
+    AUTH[Guest JWT + X-Api-Token] --> ODDS[/api/odds/stream]
+    AUTH --> SCORES[/api/scores/stream]
+    ODDS --> QUEUE[Async merge queue]
+    SCORES --> QUEUE
+    QUEUE --> RECORD[Recorder]
+    RECORD --> NORMALIZE[Normalizer]
+```
+
+## Per-Frame Sequence
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant S as Feed Source
+    participant F as VerifiedFrame
+    participant X as Execution
     participant A as RavenAgent
-    participant F as Fair Value
-    participant R as Risk Kernel
-    participant Q as Quote Engine
-    participant H as Hedge Engine
-    participant P as Receipt Emitter
-    participant W as Web Stream
+    participant R as RiskKernel
+    participant Q as QuoteEngine
+    participant H as HedgeEngine
+    participant P as ReceiptEmitter
 
-    S->>A: VerifiedFrame
-    A->>A: update match state and consensus book
-    A->>A: derive latency, volatility, exposure signals
-    A->>R: observe(frame, signals)
-    R-->>A: RiskDecision
-    alt quoting state
-        A->>F: price(consensus, match state)
-        F-->>A: bounded fair probabilities
-        A->>Q: quote(fair value, inventory, risk)
-        Q-->>A: bid / ask / sizes
-    else hedge state
-        A->>H: plan(inventory)
-        H-->>A: scenario-reducing hedge trades
-        A->>A: apply simulated hedge fills
+    F->>X: match prior quotes against new consensus
+    X-->>A: deterministic fills
+    A->>A: update inventory, match state, consensus
+    A->>A: dependency coherence + toxicity + volatility
+    A->>R: normalized risk signals
+    R-->>A: posture and reason
+    alt NORMAL / CAUTION / REENTER
+      A->>Q: fair value + inventory + risk
+      Q-->>X: publish two-sided quotes
+    else WITHDRAW
+      A->>X: cancel all active quotes
+    else HEDGE
+      A->>H: evaluate portfolio shock scenarios
+      H-->>A: strictly improving hedge plan
+      A->>A: apply hedge fills
     end
-    opt material decision
-        A->>P: canonical DecisionReceipt
-        P-->>A: hash + anchor result
+    opt WITHDRAW / HEDGE / REENTER
+      A->>P: canonical receipt
     end
-    A->>W: TickResult JSON
 ```
 
-## Feed and Provenance
+Shock frames do not fill quotes. The withdrawal reflex wins the race before the
+matching adapter can create a fill on that event.
 
-`raven/feed/` converts heterogeneous upstream payloads into `VerifiedFrame`, the
-only input understood by the decision core. A frame carries normalized match data
-alongside sequence, timestamp, payload hash, and optional Solana validation reference.
+## Pricing and Quoting
 
-```mermaid
-flowchart LR
-    RAW[Raw TxLINE payload] --> PARSE[Schema-tolerant extraction]
-    PARSE --> CLASSIFY[Odds / score / event classification]
-    CLASSIFY --> HASH[Canonical payload hash]
-    HASH --> VF[VerifiedFrame]
-    VF --> AGENT[RavenAgent.on_frame]
-```
+For decimal odds $o_i$, multiplicative vig removal is:
 
-The replay source preserves ordering and feeds recorded bytes through normalization.
-This is the basis for reproducible demos after a live fixture has ended.
+$$
+p_i^{market}=\frac{1/o_i}{\sum_j 1/o_j}
+$$
 
-## Pricing Pipeline
+The score-, clock-, and red-card-aware hazard model produces model probabilities.
+Model risk is capped around consensus:
 
-For decimal odds $o_i$, raw implied probability is $1/o_i$. Multiplicative vig
-removal normalizes the book:
+$$
+p_i^{fair}=\operatorname{clip}\left(p_i^{model},
+p_i^{market}-\delta_{max},p_i^{market}+\delta_{max}\right)
+$$
 
-$$p_i^{market} = \frac{1/o_i}{\sum_j 1/o_j}$$
+The quote midpoint shifts against inventory. Half-spread widens additively with
+event hazard, feed latency, volatility, and cross-market incoherence. Fractional
+Kelly controls size only.
 
-The hazard model estimates remaining home and away goal intensities using match
-clock, score, and red-card state. Outcome probabilities are evaluated from truncated
-Poisson goal distributions. The final model probability is capped around the market
-probability:
+## Deterministic Execution
 
-$$p_i^{fair} = \operatorname{clip}(p_i^{model},
- p_i^{market}-\delta_{max}, p_i^{market}+\delta_{max})$$
+The execution adapter owns the currently published quote book.
 
-The quote engine then applies inventory skew and risk-sensitive spread widening:
+1. A new real consensus probability crossing an ask or bid creates a fill.
+2. Otherwise, low-rate passive flow is selected from the immutable payload hash.
+3. Shock frames never fill.
+4. Fill side, size, price, and reason are written to `TickResult`.
+5. Inventory changes before the next risk decision.
 
-```mermaid
-flowchart LR
-    ODDS[Consensus odds] --> VIG[Vig removal]
-    STATE[Clock + score + cards] --> HAZARD[Goal hazard]
-    VIG --> BOUND[Bounded fair value]
-    HAZARD --> BOUND
-    BOUND --> MID[Reservation midpoint]
-    INVENTORY[Inventory] --> SKEW[Inventory skew]
-    SIGNALS[Latency + volatility + hazard] --> SPREAD[Adaptive spread]
-    MID --> BIDASK[Bid / ask]
-    SKEW --> BIDASK
-    SPREAD --> BIDASK
-```
+There is no RNG and no wall-clock dependency, so identical frames generate
+identical fills and inventory hashes.
 
 ## Risk Kernel
 
-The risk kernel is the sole owner of market posture. Its output determines whether
-RAVEN may quote, must stand aside, or must hedge.
+The posture score is:
+
+$$
+R=0.30D_{consensus}+0.25L_{event}+0.20I_{cross-market}
++0.15E_{portfolio}+0.10C_{feed}
+$$
+
+`I` is the maximum of observed volatility, dependency-graph incoherence, and
+flow toxicity. A verified goal/red-card/penalty/VAR shock bypasses the blended
+threshold and forces `WITHDRAW`.
 
 ```mermaid
 stateDiagram-v2
     [*] --> NORMAL
-    NORMAL --> CAUTION: score >= caution threshold
-    CAUTION --> NORMAL: score clears
-    NORMAL --> WITHDRAW: verified shock
-    CAUTION --> WITHDRAW: verified shock or critical score
-    WITHDRAW --> HEDGE: withdrawal tick complete
-    HEDGE --> RECALIBRATE: hedge complete
-    RECALIBRATE --> RECALIBRATE: unstable or unverified frame
-    RECALIBRATE --> REENTER: N consecutive stable frames
-    REENTER --> NORMAL: next stable observation
+    NORMAL --> CAUTION: risk >= caution threshold
+    CAUTION --> NORMAL: risk clears
+    NORMAL --> WITHDRAW: shock or critical score
+    CAUTION --> WITHDRAW: shock or critical score
+    WITHDRAW --> HEDGE: quote cancellation complete
+    HEDGE --> RECALIBRATE: plan applied
+    RECALIBRATE --> RECALIBRATE: consensus unstable
+    RECALIBRATE --> REENTER: 3 stable verified updates
+    REENTER --> NORMAL: recovery clears
     REENTER --> WITHDRAW: new shock
 ```
 
-Quoting is allowed only in `NORMAL`, `CAUTION`, and `REENTER`. It is disabled in
-`WITHDRAW`, `HEDGE`, and `RECALIBRATE`.
+## Cross-Market Hedge Search
 
-The normalized score is:
-
-$$R = 0.30D + 0.25L + 0.20I + 0.15E + 0.10C$$
-
-| Signal | Meaning |
-| --- | --- |
-| $D$ | fair-value deviation relative to the model cap |
-| $L$ | feed gap relative to the latency budget |
-| $I$ | linked-market incoherence or its runtime proxy |
-| $E$ | worst shock exposure relative to the hedge budget |
-| $C$ | degraded feed confidence |
-
-## Cross-Market Hedging
-
-The hedge engine evaluates the whole inventory under explicit event scenarios such
-as home goal, away goal, home red card, and no-more-goals. It searches available
-cross-market actions and prefers plans that reduce the worst scenario loss after
-transaction-cost penalties and trade-size limits.
+Inventory is revalued under `HOME_GOAL`, `AWAY_GOAL`, `RED_CARD_HOME`, and
+`NO_MORE_GOALS`. Candidate trades come from the latest published quotes across
+all observed markets.
 
 ```mermaid
 flowchart TD
-    BOOK[Inventory book] --> SCENARIOS[Shock scenario valuation]
-    SCENARIOS --> WORST[Select worst exposure]
-    WORST --> CANDIDATES[Generate hedge candidates]
-    CANDIDATES --> COST[Apply size and cost constraints]
-    COST --> PLAN[Best risk-reducing plan]
-    PLAN --> FILLS[Simulated fills]
-    FILLS --> BOOK
+    I[Current inventory] --> V[Value all shock scenarios]
+    V --> W[Select worst portfolio loss]
+    W --> C[Generate market / side / size candidates]
+    C --> S[Simulate each candidate across all scenarios]
+    S --> G{New global worst case improves?}
+    G -- no --> C
+    G -- yes --> K[Rank risk reduction minus cost]
+    K --> A[Apply best candidate]
+    A --> V
+    V -->|residual target reached| N[Net opposing trades]
 ```
 
-This is intentionally an execution-neutral boundary. The prototype applies simulated
-fills; a production adapter would translate `HedgeTrade` objects into authenticated
-venue orders and reconcile acknowledgements before declaring completion.
+Testing the full post-trade portfolio prevents a hedge that repairs one shock
+while creating a larger loss in another. The integration suite asserts strict
+worst-case improvement for every emitted hedge.
 
-## Decision Receipts
+## Proof Architecture
 
-Receipts turn material decisions into content-addressed audit records.
+### TxLINE data proof
 
 ```mermaid
 flowchart LR
-    INPUTS[Frame + state + inventory] --> CANON[Canonical JSON]
-    ACTION[Risk action + hedge trades] --> CANON
-    CANON --> SHA[SHA-256 receipt hash]
-    SHA --> LOCAL[(JSON receipt store)]
-    SHA -. optional .-> MEMO[Solana Memo anchor]
-    SHA -. optional .-> TX[Solana transaction anchor]
-    MEMO --> VERIFY[verify.ts]
-    TX --> VERIFY
+    E[Goal event fixture 18222446 seq 118] --> API[stat-validation statKey 1]
+    API --> MP[Merkle branches + fixture summary]
+    MP --> V[validateStat view]
+    PDA[(daily_scores_roots PDA)] --> V
+    V --> OK[On-chain result true]
 ```
 
-The local/demo default is a `NullAnchor`: receipts and hashes still exist, but no
-claim of on-chain settlement is made. Devnet anchoring is opt-in through the provided
-anchor implementations. This keeps offline replay deterministic and removes wallet
-availability from the core decision loop.
+`verify_txline.ts` uses TxLINE's official devnet IDL and program
+`6pW64...wyP2J`. The checked artifact proves stat `1 == 1` for score sequence
+`118` against PDA `FtnZ...92HdH`. It is a read-only Solana simulation.
 
-## Web and Deployment Topology
+### RAVEN decision proof
+
+```mermaid
+flowchart LR
+    F[Payload hash + provider sequence] --> B[Decision payload]
+    I[Inventory before / after] --> B
+    H[Cancelled quotes + hedge trades + worst risk] --> B
+    B --> C[canonical commitmentHash]
+    C --> M[Solana Memo RAVEN:commitmentHash]
+    B --> RH[full receiptHash]
+    M --> TS[verify.ts]
+    RH --> TS
+```
+
+`marketStateHash` is the source payload hash; it is not overloaded as a receipt
+commitment. `commitmentHash` covers every decision field. `receiptHash` covers
+the decision plus its commitment. The verifier reconstructs both and requires
+the complete commitment in the Memo.
+
+The deployed browser has no signer. `ArchiveAnchor` matches deterministic replay
+receipts to four public pre-anchored proofs only when both hashes match.
+
+## Counterfactual Isolation
 
 ```mermaid
 flowchart TB
-    subgraph Render[Render Web Service]
-      DATA[(Packaged replay)] --> DRIVER[Replay Driver]
-      DRIVER --> CORE[RAVEN Agent]
-      CORE --> SERVER[Python HTTP + SSE server]
-      SERVER --> HEALTH[/healthz]
-      SERVER --> STREAM[/stream]
-    end
-
-    subgraph Vercel[Vercel Static Deployment]
-      CONFIG[config.js with RAVEN_API_BASE]
-      APP[Control Room HTML/CSS/JS]
-      CONFIG --> APP
-    end
-
-    STREAM -->|CORS-enabled EventSource| APP
-    USER[Browser] --> APP
+    FRAMES[Same 1,976 VerifiedFrames] --> B[Event-blind baseline]
+    FRAMES --> R[Full RAVEN policy]
+    EXEC[Same deterministic execution rules] --> B
+    EXEC --> R
+    B --> BM[Baseline metrics]
+    R --> RM[RAVEN metrics]
+    BM --> C[Comparison]
+    RM --> C
 ```
 
-The split exists because SSE is a long-lived connection and is a poor fit for a
-static or short-lived serverless function. Render owns the stream; Vercel serves the
-frontend. `RAVEN_API_BASE` joins the two at frontend build time.
+The control policy always remains `NORMAL`, uses a static spread, and never
+hedges. It shares normalization, fair value, quote contracts, inventory, and
+execution with RAVEN. This isolates the risk policy rather than comparing two
+unrelated simulators.
 
-## Determinism and Side Effects
+## Deployment
 
-RAVEN isolates side effects at its edges:
+```mermaid
+flowchart TB
+    subgraph Render
+      D[(Replay + public proofs)] --> PY[Python decision core]
+      PY --> H[/healthz]
+      PY --> C[/counterfactual]
+      PY --> S[/stream SSE]
+    end
+    subgraph Vercel
+      CFG[Generated config.js] --> SPA[Static landing + Control Room]
+    end
+    S -->|CORS EventSource| SPA
+    C -->|measured evidence| SPA
+    U[Judge browser] --> SPA
+```
 
-| Deterministic core | Side-effect boundary |
+Render owns long-lived SSE. Vercel serves immutable static assets and injects
+`RAVEN_API_BASE` at build time. The replay deployment needs no secret.
+
+## Failure Behavior
+
+| Failure | Response |
 | --- | --- |
-| Normalization and frame classification | TxLINE network connection |
-| Match-state updates | Raw frame recording |
-| Fair-value and quote calculation | Receipt file persistence |
-| Risk transitions | Optional Solana RPC |
-| Shock exposure and hedge planning | SSE client delivery |
+| TxLINE `401` | Refresh guest JWT and reconnect |
+| Stream disconnect | Bounded reconnect backoff; raw recorder remains append-only |
+| Shock frame | Cancel quotes before hedging; no event-frame fill |
+| Linked markets disagree | Increase incoherence risk and widen/withdraw |
+| Toxic fill burst | Increase toxicity risk and shorten/widen quotes |
+| Hedge candidate worsens another shock | Reject candidate |
+| Solana write fails | Decision continues; local hash remains, anchor reports failure |
+| Browser disconnects | End only that SSE handler |
+| Render restarts | New deterministic replay session |
 
-Given the same ordered normalized frames and initial configuration, the core is
-designed to produce the same decisions. Wall-clock waiting and network anchoring are
-kept outside that claim.
+## Test Invariants
 
-## Failure Behaviour
+- packaged replay is multi-market, monotonic, and bound to one fixture
+- same frames produce identical states, fills, hedges, and receipt hashes
+- inventory changes only through explicit fills and hedge trades
+- every emitted hedge strictly reduces absolute worst-case loss
+- active withdrawals report a non-zero cancelled quote count
+- exactly four current replay receipts match public devnet signatures
+- native TxLINE score proof returns true against the official devnet program
+- counterfactual agents process the same frame count
 
-| Failure | Intended response |
-| --- | --- |
-| Verified critical event | Withdraw quotes before hedging |
-| Feed gaps or volatility | Raise risk and widen or suspend quoting |
-| Unstable post-event prices | Remain in `RECALIBRATE` |
-| Browser disconnect | End that SSE handler without affecting other clients |
-| Solana unavailable | Preserve local receipt; anchor result reports failure/backend |
-| Render restart | Replay restarts; prototype state is process-local |
+## Production Boundary
 
-## Production Hardening
-
-The current system is a deployable demonstration, not a production trading venue.
-A production rollout should add:
-
-- authenticated execution adapters and idempotent client order IDs
-- durable inventory, receipt, and replay storage
-- explicit order acknowledgement and cancellation reconciliation
-- queue-backed separation between feed, decisions, execution, and UI
-- restricted CORS, authentication, rate limiting, and secret management
-- high-availability stream ingestion and sequence-gap recovery
-- metrics, tracing, alerting, and incident runbooks
-- formal model validation, venue-specific limits, and kill switches
-- managed Solana signing with key rotation and retry policy
-
-## Source Index
-
-| Concern | Primary implementation |
-| --- | --- |
-| Orchestration | `raven/agent.py` |
-| Frame model and normalization | `raven/feed/model.py`, `raven/feed/normalize.py` |
-| Live and replay sources | `raven/feed/live.py`, `raven/feed/replay.py` |
-| Fair value | `raven/pricing/fair_value.py`, `raven/pricing/hazard.py` |
-| Quote construction | `raven/quoting/engine.py`, `raven/quoting/inventory.py` |
-| Risk state machine | `raven/risk/kernel.py` |
-| Market dependencies | `raven/risk/dependency_graph.py` |
-| Flow toxicity | `raven/risk/adversarial.py` |
-| Hedging | `raven/hedging/engine.py` |
-| Receipts and anchors | `raven/provenance/` |
-| Web delivery | `raven/web/` |
-
+The current execution adapter is simulated. Production deployment additionally
+requires venue-specific order gateways, idempotent client IDs, durable event and
+inventory stores, cancel/replace acknowledgement, reconciliation, queue-backed
+work isolation, authentication, restricted CORS, high-availability ingestion,
+sequence-gap recovery, metrics and alerts, managed signing, formal model review,
+exposure limits, and operator kill switches.

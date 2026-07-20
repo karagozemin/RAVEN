@@ -125,6 +125,7 @@ class VerifiedFrame:
     sequence: int
     timestamp_ms: int
     payload_hash: str
+    provider_sequence: Optional[int] = None
     fixture_id: Optional[int] = None
     solana_validation_ref: Optional[str] = None
 
@@ -166,5 +167,8 @@ class VerifiedFrame:
 
     def short_provenance(self) -> str:
         """Compact provenance string for the Control Room badge."""
-        badge = "verified" if self.verified else "seq-only"
-        return f"{badge} · seq #{self.sequence}"
+        if self.verified and self.provider_sequence is not None:
+            return f"on-chain verified · TxLINE seq #{self.provider_sequence}"
+        if self.provider_sequence is not None:
+            return f"TxLINE seq #{self.provider_sequence} · payload bound"
+        return f"TxLINE historical payload · replay #{self.sequence}"

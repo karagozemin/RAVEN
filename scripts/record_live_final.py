@@ -107,9 +107,9 @@ async def main(timeout_s: int) -> int:
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
     out_path = os.path.abspath(OUT_PATH)
 
-    print(f"RAVEN Live Recorder — World Cup Final")
+    print("RAVEN Live Recorder — World Cup Final")
     print(f"  Base URL  : {BASE_URL}")
-    print(f"  JWT       : {JWT[:40]}...")
+    print("  Auth      : configured")
     print(f"  Output    : {out_path}")
     print(f"  Timeout   : {timeout_s}s  (Ctrl-C to stop early)")
     print("-" * 60)
@@ -125,8 +125,6 @@ async def main(timeout_s: int) -> int:
 
         deadline = time.monotonic() + timeout_s
         frame_count = 0
-        heartbeat_count = 0
-
         with open(out_path, "a", encoding="utf-8") as fout:
             try:
                 while time.monotonic() < deadline and not stop.is_set():

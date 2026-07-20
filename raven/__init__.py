@@ -11,4 +11,4 @@ Tagline:
 """
 
 __version__ = "1.0.0"
-__policy_version__ = "raven-v1.0.0"
+__policy_version__ = "raven-v1.1.0"

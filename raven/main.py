@@ -15,8 +15,10 @@ imports and composes correctly without a network or a live match.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
-from typing import Iterable, List
+from pathlib import Path
+from typing import AsyncIterable, Iterable, List
 
 from raven.agent import RavenAgent, TickResult
 from raven.config import load_settings
@@ -43,7 +45,10 @@ def _render(result: TickResult) -> None:
         )
     elif result.is_quoting:
         extra = f"  spread P&L +{result.realized_spread_pnl:.4f}"
-    recv = "  [receipt ✓]" if result.receipt is not None else ""
+    recv = ""
+    if result.receipt is not None:
+        proof = "devnet" if result.receipt.anchor.anchored else "local"
+        recv = f"  [receipt · {proof}]"
     print(f"{tag} {seq} {result.risk.reason}{extra}{recv}")
 
 
@@ -115,7 +120,21 @@ def run(frames: Iterable[VerifiedFrame]) -> int:
     total_pnl = sum(r.realized_spread_pnl for r in agent.results)
     receipts = sum(1 for r in agent.results if r.receipt is not None)
     print("-" * 60)
-    print(f"ticks={n}  spread P&L={total_pnl:.4f}  receipts anchored={receipts}")
+    print(f"ticks={n}  spread opportunity={total_pnl:.4f}  receipts={receipts}")
+    return 0
+
+
+async def run_async(frames: AsyncIterable[VerifiedFrame]) -> int:
+    """Consume a live or replay async feed through the same agent pipeline."""
+    agent = RavenAgent(on_tick=_render)
+    n = 0
+    async for frame in frames:
+        agent.on_frame(frame)
+        n += 1
+    total_pnl = sum(result.realized_spread_pnl for result in agent.results)
+    receipts = sum(1 for result in agent.results if result.receipt is not None)
+    print("-" * 60)
+    print(f"ticks={n}  spread opportunity={total_pnl:.4f}  receipts={receipts}")
     return 0
 
 
@@ -135,12 +154,20 @@ def main(argv: List[str] | None = None) -> int:
 
     settings = load_settings()
     print(f"RAVEN starting in {settings.feed_mode} mode")
-    # Live/replay feed wiring uses the async sources in raven.feed; for the
-    # synchronous CLI we defer to those modules' own runners.
+    replay_name = Path(settings.replay_file).name
+    if settings.is_replay and replay_name in {
+        "scores_historical.jsonl",
+        "scores_historical_18222446.jsonl",
+    }:
+        from raven.web.driver import iter_verified_frames
+
+        print("Using merged real TxLINE score + odds historical replay")
+        return run(iter_verified_frames())
+
     from raven.feed.source import build_source
 
     source = build_source(settings)
-    return run(source.frames())
+    return asyncio.run(run_async(source.frames()))
 
 
 if __name__ == "__main__":

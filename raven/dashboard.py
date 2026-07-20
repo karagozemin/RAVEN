@@ -27,7 +27,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 try:
     from rich.console import Console
@@ -143,7 +143,8 @@ _STATE_COLORS = {
     "REENTER":     "bold blue",
 }
 
-_RISK_COLOR = lambda s: "green" if s < 30 else ("yellow" if s < 60 else ("red" if s < 80 else "bold red"))
+def _RISK_COLOR(s):
+    return "green" if s < 30 else ("yellow" if s < 60 else ("red" if s < 80 else "bold red"))
 
 
 class ControlRoom:
@@ -375,7 +376,7 @@ class ControlRoom:
 
     def _footer_panel(self, s: DashboardState) -> Panel:
         txt = Text.assemble(
-            ("  raven-v1.0.0", "dim"),
+            ("  raven-v1.1.0", "dim"),
             ("  │  ", "dim"),
             ("TxLINE", "cyan"),
             (" → Solana devnet", "dim"),

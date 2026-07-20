@@ -27,7 +27,7 @@ into a reservation price and a two-sided quote.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Optional
 
 from raven.feed.model import OddsSnapshot

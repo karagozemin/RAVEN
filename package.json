@@ -5,12 +5,16 @@
   "private": true,
   "scripts": {
     "verify": "npx ts-node verify.ts",
+    "verify:txline": "npx ts-node verify_txline.ts",
     "build": "tsc"
   },
   "dependencies": {
-    "@solana/web3.js": "^1.95.5"
+    "@coral-xyz/anchor": "0.32.1",
+    "@solana/web3.js": "^1.95.5",
+    "bn.js": "^5.2.2"
   },
   "devDependencies": {
+    "@types/bn.js": "^5.1.6",
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0",
     "ts-node": "^10.9.0"

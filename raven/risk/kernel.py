@@ -36,7 +36,7 @@ makes the kernel replayable (F8) and its transitions anchorable (F7).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
 
@@ -376,7 +376,7 @@ class RiskKernel:
             prior_state=prior,
             risk_score=score,
             reason=reason,
-            sequence=frame.sequence,
+            sequence=frame.provider_sequence or frame.sequence,
             timestamp_ms=frame.timestamp_ms,
             triggered_by_shock=is_shock,
         )
@@ -417,7 +417,8 @@ class RiskKernel:
             ev = frame.event_type.value
             return (
                 RiskState.WITHDRAW,
-                f"verified {ev} (seq #{frame.sequence}) — cancel all quotes",
+                f"verified {ev} (TxLINE seq #{frame.provider_sequence or frame.sequence}) "
+                "— cancel all quotes",
             )
 
         if state is RiskState.NORMAL:
@@ -490,4 +491,3 @@ class RiskKernel:
 
         # Defensive default; unreachable for the closed enum above.
         return (state, "no change")
-

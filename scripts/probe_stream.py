@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 """Quick probe: connect to stream, print first 10 raw SSE lines."""
-import http.client, ssl, json, time, sys, urllib.request
+import http.client
+import ssl
+import json
+import os
+import time
+import sys
+import urllib.request
+
+from dotenv import load_dotenv
 
 BASE = "txline-dev.txodds.com"
-API  = "txoracle_api_09d0b54ccd6b4964a1ef36aef3c5b340"
+load_dotenv()
+API = os.environ.get("TXLINE_API_TOKEN", "")
+if not API:
+    raise RuntimeError("TXLINE_API_TOKEN is required")
 
 def fresh_jwt(host=BASE):
     req = urllib.request.Request(

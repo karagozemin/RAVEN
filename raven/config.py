@@ -60,7 +60,8 @@ class Settings:
 
     # TxLINE (real endpoint)
     txline_sse_url: str
-    txline_api_key: str
+    txline_api_token: str
+    txline_jwt: str
     txline_competition: str
     txline_service_level: int
 
@@ -90,7 +91,8 @@ def load_settings(dotenv_path: str = ".env") -> Settings:
     return Settings(
         feed_mode=_get("RAVEN_FEED_MODE", "replay"),
         txline_sse_url=_get("TXLINE_SSE_URL", ""),
-        txline_api_key=_get("TXLINE_API_KEY", ""),
+        txline_api_token=_get("TXLINE_API_TOKEN", _get("TXLINE_API_KEY", "")),
+        txline_jwt=_get("TXLINE_JWT", ""),
         txline_competition=_get("TXLINE_COMPETITION", "worldcup"),
         txline_service_level=_get_int("TXLINE_SERVICE_LEVEL", 12),
         record_dir=_get("RAVEN_RECORD_DIR", "data/recordings"),

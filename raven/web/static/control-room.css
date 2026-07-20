@@ -102,6 +102,7 @@ body.control-room-open .conn-dot {
   height: 7px;
 }
 body.control-room-open .conn-off { background: #555a55; }
+body.control-room-open .conn-ready { background: var(--app-amber); box-shadow: 0 0 8px rgba(242, 188, 73, 0.45); }
 body.control-room-open .conn-on {
   background: var(--app-signal);
   box-shadow: 0 0 10px rgba(183, 255, 74, 0.6);
@@ -511,7 +512,9 @@ body.control-room-open .pnl-line {
   font-size: 8px;
   letter-spacing: 0.8px;
 }
+body.control-room-open .pnl-line { gap: 12px; }
 body.control-room-open .pnl-line b { color: var(--app-signal); font-size: 14px; }
+body.control-room-open .pnl-line b + span { margin-left: auto; }
 
 body.control-room-open .hedge-box {
   margin: 0;
@@ -578,6 +581,8 @@ body.control-room-open .receipt-seq { color: var(--app-faint); font-size: 8px; }
 body.control-room-open .receipt-hash { color: var(--app-blue); font-size: 8px; }
 body.control-room-open .receipt-meta { margin-top: 6px; gap: 9px; color: var(--app-faint); font-size: 8px; }
 body.control-room-open .receipt-meta .anchored { color: var(--app-signal); }
+body.control-room-open .receipt-meta a { text-decoration: none; }
+body.control-room-open .receipt-meta a:hover { text-decoration: underline; }
 
 body.control-room-open .empty-feed {
   padding: 28px 14px;

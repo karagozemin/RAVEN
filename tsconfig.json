@@ -11,6 +11,6 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["verify.ts"],
+  "include": ["verify.ts", "verify_txline.ts"],
   "exclude": ["node_modules", "dist"]
 }

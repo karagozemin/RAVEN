@@ -1,40 +1,15 @@
-"""Live TxLINE SSE source for RAVEN's Verified Feed Layer (F1).
-
-This is the *only* path that touches the network. It opens a Server-Sent
-Events (SSE) connection to the real TxLINE World Cup endpoint, parses each
-event, records the untouched payload to disk (so it can be replayed verbatim
-during judging), and yields normalized :class:`VerifiedFrame` instances.
-
-Design notes:
-
-* **No mock data, ever.** This source only emits bytes that actually arrived
-  from TxLINE. The recording it produces is what feeds :class:`ReplaySource`
-  later, guaranteeing the replayed ``payload_hash`` matches the live one.
-* **Record-on-ingest.** Every raw payload is persisted *before* it is yielded,
-  so a crash mid-run still leaves a faithful, replayable capture.
-* **Resilient.** Transient network drops trigger a bounded exponential backoff
-  reconnect rather than killing the agent.
-
-SSE wire format handled (per the W3C EventSource spec)::
-
-    id: 428
-    event: odds
-    data: {"fixture_id": 17952170, "odds": {...}, "sequence": 428}
-    <blank line terminates the event>
-
-``data:`` may span multiple lines; they are concatenated with newlines before
-JSON parsing.
-"""
+"""Authenticated live TxLINE odds + scores SSE ingestion."""
 
 from __future__ import annotations
 
 import asyncio
-import json
+from dataclasses import replace
 from typing import AsyncIterator, Dict, Optional
+from urllib.parse import urlsplit, urlunsplit
 
-try:  # httpx is the async HTTP client used for the streaming connection.
+try:
     import httpx
-except ImportError:  # pragma: no cover - surfaced with a clear message at run
+except ImportError:  # pragma: no cover
     httpx = None  # type: ignore[assignment]
 
 from .model import VerifiedFrame
@@ -44,20 +19,12 @@ from .source import FeedSource
 
 
 class LiveSSESource(FeedSource):
-    """Streams real TxLINE World Cup data over SSE and records every frame.
+    """Merge the official TxLINE odds and scores streams into one ordered feed.
 
-    Parameters
-    ----------
-    url:
-        Base TxLINE SSE endpoint (real, from the hackathon docs).
-    api_key:
-        TxLINE API key. Sent as a Bearer token; never logged.
-    competition:
-        Competition slug (e.g. ``"worldcup"``).
-    service_level:
-        TxLINE service level (``12`` = real-time, ``1`` = 60s delayed).
-    record_dir:
-        Directory where raw payloads are captured as JSONL for later replay.
+    TxLINE requires a short-lived guest JWT in ``Authorization`` and the
+    activated subscription token in ``X-Api-Token``. A 401 refreshes the guest
+    JWT automatically; transport failures reconnect with bounded backoff.
+    Every accepted payload is recorded before normalization.
     """
 
     mode = "live"
@@ -65,39 +32,48 @@ class LiveSSESource(FeedSource):
     def __init__(
         self,
         url: str,
-        api_key: str,
+        api_token: str,
+        guest_jwt: str = "",
         competition: str = "worldcup",
         service_level: int = 12,
         record_dir: str = "data/recordings",
     ) -> None:
-        self._url = url
-        self._api_key = api_key
+        self._api_base = self._normalise_api_base(url)
+        self._api_token = api_token
+        self._jwt = guest_jwt
         self._competition = competition
         self._service_level = service_level
         self._recorder = Recorder(record_dir)
         self._client: Optional["httpx.AsyncClient"] = None
-
-        # Reconnect policy.
+        self._jwt_lock = asyncio.Lock()
         self._max_backoff_s = 30.0
-        self._base_backoff_s = 1.0
 
-    # -- resource lifecycle ------------------------------------------------
+    @staticmethod
+    def _normalise_api_base(url: str) -> str:
+        value = (url or "https://txline-dev.txodds.com/api").rstrip("/")
+        for suffix in ("/odds/stream", "/scores/stream"):
+            if value.endswith(suffix):
+                value = value[: -len(suffix)]
+        return value
+
+    @property
+    def stream_urls(self) -> tuple[str, str]:
+        return (f"{self._api_base}/odds/stream", f"{self._api_base}/scores/stream")
+
+    @property
+    def auth_origin(self) -> str:
+        parsed = urlsplit(self._api_base)
+        return urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
 
     async def open(self) -> None:
         if httpx is None:
-            raise RuntimeError(
-                "httpx is required for the live TxLINE source. Install it with "
-                "`pip install httpx` (see requirements.txt), or run in replay "
-                "mode (RAVEN_FEED_MODE=replay)."
-            )
-        if not self._url:
-            raise RuntimeError(
-                "TXLINE_SSE_URL is empty. Set the real TxLINE endpoint in .env "
-                "before running in live mode."
-            )
+            raise RuntimeError("httpx is required for live TxLINE ingestion")
+        if not self._api_token:
+            raise RuntimeError("TXLINE_API_TOKEN is required for live TxLINE ingestion")
         self._recorder.open()
-        # No fixed timeout on the read: SSE is a long-lived stream.
         self._client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, read=None))
+        if not self._jwt:
+            await self._refresh_jwt()
 
     async def close(self) -> None:
         if self._client is not None:
@@ -105,24 +81,28 @@ class LiveSSESource(FeedSource):
             self._client = None
         self._recorder.close()
 
-    # -- request shaping ---------------------------------------------------
+    async def _refresh_jwt(self) -> str:
+        async with self._jwt_lock:
+            assert self._client is not None
+            response = await self._client.post(
+                f"{self.auth_origin}/auth/guest/start",
+                json={},
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            token = response.json().get("token")
+            if not token:
+                raise RuntimeError("TxLINE guest authentication returned no token")
+            self._jwt = str(token)
+            return self._jwt
 
     def _headers(self) -> Dict[str, str]:
-        headers = {
+        return {
+            "Authorization": f"Bearer {self._jwt}",
+            "X-Api-Token": self._api_token,
             "Accept": "text/event-stream",
             "Cache-Control": "no-cache",
         }
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
-        return headers
-
-    def _params(self) -> Dict[str, str]:
-        return {
-            "competition": self._competition,
-            "serviceLevel": str(self._service_level),
-        }
-
-    # -- frame production --------------------------------------------------
 
     def frames(self) -> AsyncIterator[VerifiedFrame]:
         return self._iter()
@@ -130,83 +110,72 @@ class LiveSSESource(FeedSource):
     async def _iter(self) -> AsyncIterator[VerifiedFrame]:
         if self._client is None:
             await self.open()
+        queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=2048)
+        tasks = [
+            asyncio.create_task(self._consume_stream(url, queue))
+            for url in self.stream_urls
+        ]
+        fallback_sequence = 0
+        try:
+            while True:
+                payload = await queue.get()
+                fallback_sequence += 1
+                native_sequence = payload.get("Seq") or payload.get("sequence") or payload.get("seq")
+                self._recorder.write(payload, seq=native_sequence)
+                frame = normalize(payload, fallback_sequence=fallback_sequence)
+                yield replace(frame, sequence=fallback_sequence)
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            await self.close()
+
+    async def _consume_stream(self, url: str, queue: asyncio.Queue[dict]) -> None:
         assert self._client is not None
-
-        fallback_seq = 0
-        backoff = self._base_backoff_s
-
+        backoff = 1.0
         while True:
             try:
-                async with self._client.stream(
-                    "GET",
-                    self._url,
-                    headers=self._headers(),
-                    params=self._params(),
-                ) as response:
+                async with self._client.stream("GET", url, headers=self._headers()) as response:
+                    if response.status_code == 401:
+                        await self._refresh_jwt()
+                        continue
                     response.raise_for_status()
-                    backoff = self._base_backoff_s  # reset on a clean connect
-
+                    backoff = 1.0
                     async for payload in self._read_events(response):
-                        fallback_seq += 1
-                        native_seq = payload.get("sequence") or payload.get("seq")
-                        self._recorder.write(payload, seq=native_seq)
-                        yield normalize(payload, fallback_sequence=fallback_seq)
-
+                        await queue.put(payload)
             except asyncio.CancelledError:
                 raise
-            except Exception:  # noqa: BLE001 - reconnect on any transport error
+            except Exception:
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2.0, self._max_backoff_s)
-                continue
-
-    async def _read_events(
-        self, response: "httpx.Response"
-    ) -> AsyncIterator[dict]:
-        """Parse an SSE byte stream into raw TxLINE payload dicts.
-
-        Accumulates ``data:`` lines until a blank line delimits the event,
-        then JSON-decodes the concatenated data. Malformed events are skipped
-        rather than aborting the stream.
-        """
-        data_lines: list[str] = []
-
-        async for raw_line in response.aiter_lines():
-            line = raw_line.rstrip("\r")
-
-            if line == "":
-                # Blank line: dispatch the accumulated event, if any.
-                if data_lines:
-                    payload = self._decode(data_lines)
-                    data_lines = []
-                    if payload is not None:
-                        yield payload
-                continue
-
-            if line.startswith(":"):
-                # SSE comment / keep-alive heartbeat.
-                continue
-
-            field, _, value = line.partition(":")
-            value = value[1:] if value.startswith(" ") else value
-
-            if field == "data":
-                data_lines.append(value)
-            # ``id`` / ``event`` fields are informational here; the payload
-            # itself carries the authoritative sequence/type for RAVEN.
-
-        # Flush a trailing event if the stream ends without a final blank line.
-        if data_lines:
-            payload = self._decode(data_lines)
-            if payload is not None:
-                yield payload
 
     @staticmethod
-    def _decode(data_lines: list[str]) -> Optional[dict]:
-        text = "\n".join(data_lines).strip()
-        if not text:
-            return None
+    async def _read_events(response: "httpx.Response") -> AsyncIterator[dict]:
+        data_lines: list[str] = []
+        async for raw_line in response.aiter_lines():
+            line = raw_line.rstrip("\r")
+            if not line:
+                if data_lines:
+                    payload = LiveSSESource._decode(data_lines)
+                    data_lines = []
+                    if isinstance(payload, dict):
+                        yield payload
+                    elif isinstance(payload, list):
+                        for item in payload:
+                            if isinstance(item, dict):
+                                yield item
+                continue
+            if line.startswith(":"):
+                continue
+            field, separator, value = line.partition(":")
+            if field == "data":
+                data_lines.append(value.lstrip(" ") if separator else "")
+
+    @staticmethod
+    def _decode(data_lines: list[str]):
+        import json
+
         try:
-            payload = json.loads(text)
+            return json.loads("\n".join(data_lines))
         except json.JSONDecodeError:
             return None
-        return payload if isinstance(payload, dict) else None

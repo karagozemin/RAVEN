@@ -31,9 +31,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
-from raven.feed.model import MatchEventType, OddsSnapshot, VerifiedFrame
+from raven.feed.model import MatchEventType, VerifiedFrame
 
 
 # ---------------------------------------------------------------------------
@@ -292,9 +292,6 @@ class DependencyGraph:
         """One-line summary for the Control Room terminal."""
         parts = []
         for m, s in self._states.items():
-            age_s = "?"
-            if s.last_update_ms:
-                pass  # age would need wall time — show market name only
             parts.append(m[:3].upper())
         return "dep-graph: " + " | ".join(parts)
 

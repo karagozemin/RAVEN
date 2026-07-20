@@ -37,6 +37,7 @@ const el = {
   quotesCount: $("quotesCount"),
   quoteMode: $("quoteMode"),
   spreadPnl: $("spreadPnl"),
+  fillCount: $("fillCount"),
   exposureBody: $("exposureBody"),
   exposureStatus: $("exposureStatus"),
   hedgeBox: $("hedgeBox"),
@@ -172,6 +173,7 @@ let source = null;
 let running = false;
 let cumulativePnl = 0;
 let receiptTotal = 0;
+let fillTotal = 0;
 let lastScore = { home: 0, away: 0 };
 let flashTimer = null;
 
@@ -190,9 +192,31 @@ function fmt(n, d = 3) {
   return Number(n).toFixed(d);
 }
 
-function setConnection(on) {
-  el.connDot.className = "conn-dot " + (on ? "conn-on" : "conn-off");
-  el.connText.textContent = on ? "STREAMING" : "OFFLINE";
+function setConnection(state) {
+  el.connDot.className = "conn-dot conn-" + state;
+  el.connText.textContent = state === "on" ? "STREAMING" : state === "ready" ? "READY" : "OFFLINE";
+}
+
+async function checkBackend() {
+  try {
+    const response = await fetch(`${API_BASE}/healthz`, { cache: "no-store" });
+    if (response.ok && !running) setConnection("ready");
+  } catch (_) {
+    if (!running) setConnection("off");
+  }
+}
+
+async function loadEvidence() {
+  try {
+    const response = await fetch(`${API_BASE}/counterfactual`);
+    if (!response.ok) return;
+    const result = await response.json();
+    $("evidenceFrames").textContent = Number(result.raven.frames).toLocaleString("en-US");
+    $("evidenceReduction").textContent = `${Number(result.peak_risk_reduction_pct).toFixed(2)}%`;
+    $("evidenceProofs").textContent = result.onchain_proofs;
+  } catch (_) {
+    // Static build-time values remain visible while a free backend wakes up.
+  }
 }
 
 /* ── Renderers ────────────────────────────────────────────────── */
@@ -274,8 +298,10 @@ function renderQuotes(t) {
       .join("");
   }
   cumulativePnl += t.spread_pnl || 0;
+  fillTotal += (t.fills || []).length;
   el.spreadPnl.textContent =
     (cumulativePnl >= 0 ? "+" : "") + fmt(cumulativePnl, 6);
+  el.fillCount.textContent = fillTotal;
 }
 
 function renderExposure(t) {
@@ -323,7 +349,7 @@ function renderReceipt(t) {
   const div = document.createElement("div");
   div.className = "receipt act-" + (r.action || "").toLowerCase();
   const anchored = r.anchored
-    ? `<span class="anchored">⛓ anchored · ${r.backend}</span>`
+    ? `<a class="anchored" href="https://explorer.solana.com/tx/${r.signature}?cluster=devnet" target="_blank" rel="noopener noreferrer">view devnet proof ↗</a>`
     : `<span class="unanchored">local · ${r.backend}</span>`;
   div.innerHTML = `
     <div class="receipt-head">
@@ -386,11 +412,13 @@ function start() {
   running = true;
   cumulativePnl = 0;
   receiptTotal = 0;
+  fillTotal = 0;
   lastScore = { home: 0, away: 0 };
   el.receiptFeed.innerHTML =
     '<div class="empty-feed">Material decisions will be recorded here</div>';
   el.logFeed.innerHTML = '<div class="empty-feed">Waiting for the first decision</div>';
   el.receiptCount.textContent = "0";
+  el.fillCount.textContent = "0";
   el.quoteMode.textContent = "CONNECTING";
   el.quoteMode.className = "market-open";
 
@@ -400,7 +428,7 @@ function start() {
   );
 
 
-  source.onopen = () => setConnection(true);
+  source.onopen = () => setConnection("on");
 
   source.onmessage = (e) => {
     try {
@@ -432,15 +460,18 @@ function stop() {
     source.close();
     source = null;
   }
-  setConnection(false);
+  setConnection("off");
   el.startBtn.disabled = false;
   el.stopBtn.disabled = true;
+  checkBackend();
 }
 
 el.startBtn.addEventListener("click", start);
 el.stopBtn.addEventListener("click", stop);
 
-setConnection(false);
+setConnection("off");
+checkBackend();
+loadEvidence();
 
 if (window.location.hash === "#control-room") {
   const controlRoomUrl = window.location.href;

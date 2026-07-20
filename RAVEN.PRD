@@ -17,9 +17,9 @@ Live football markets move violently the instant a match state changes. When a g
 ## 3. SOLUTION
 RAVEN is an autonomous in-play market maker that:
 1. **Earns spread** under normal flow using a fair-value engine with event-hazard adjustments
-2. **Withdraws instantly** (< 250ms) when a cryptographically verified match event hits
+2. **Withdraws in the same deterministic decision tick** when a critical match event hits
 3. **Neutralizes exposure** across connected markets via cross-market hedging
-4. **Proves every decision** as a verifiable receipt anchored on Solana devnet
+4. **Records every material decision** and anchors representative receipts on Solana devnet
 
 Single economic goal: **Risk-adjusted spread capture while surviving match-event shocks.**
 
@@ -46,7 +46,8 @@ Single economic goal: **Risk-adjusted spread capture while surviving match-event
 ### Layer 1 — Verified Feed Layer (F1) ✅ IMPLEMENTED
 - Async SSE/websocket connection to real TxLINE World Cup endpoint
 - Every frame: `{sequence, timestamp_ms, payload_hash, solana_validation_ref}`
-- Dashboard badge: `✓ verified · seq #N` on every data point
+- Native TxLINE `Seq` is preserved separately from monotonic replay order
+- Goal sequence 118 is validated against TxLINE's devnet Merkle-root PDA
 - Files: `raven/feed/live.py`, `raven/feed/model.py`, `raven/feed/normalize.py`, `raven/feed/replay.py`, `raven/feed/source.py`
 
 ### Layer 2 — Fair-Value Engine (F2) ✅ IMPLEMENTED
@@ -75,12 +76,13 @@ Single economic goal: **Risk-adjusted spread capture while surviving match-event
 - Fully autonomous — zero manual input from deploy to shutdown
 - Files: `raven/risk/kernel.py`
 
-### Layer 5 — Market Dependency Graph (F5)
+### Layer 5 — Market Dependency Graph (F5) ✅ IMPLEMENTED
 - Each market = node; event-driven relationships = edges
 - On event: verify ALL dependent markets moved in expected direction within acceptable latency
 - Detects stale linked markets (1X2 updated but Handicap stale)
 - A goal affects: 1X2, Asian Handicap, Total Goals, Correct Score, Next Goal (all simultaneously)
-- Status: **TO IMPLEMENT** — `raven/risk/dependency_graph.py`
+- Runtime coherence feeds the Risk Kernel and quote widening
+- File: `raven/risk/dependency_graph.py`
 
 ### Layer 6 — Self-Hedging Engine (F6) ✅ IMPLEMENTED
 - All connected positions = one portfolio (cross-market netting)
@@ -90,17 +92,18 @@ Single economic goal: **Risk-adjusted spread capture while surviving match-event
   - 1X2 ↔ Double Chance netting
   - Goal-shock → Total Goals hedge
 - Minimize: `event-shock loss + inventory concentration + hedge cost` (without eliminating spread revenue)
-- Demo target: exposure +12,480 → +930 after hedge
+- Measured first major hedge: worst-case exposure -293.36 → -22.72
 - Files: `raven/hedging/engine.py`
 
 ### Layer 7 — Solana Decision Receipts (F7) ✅ IMPLEMENTED
-- Every critical decision anchored to Solana devnet
+- Every critical decision recorded; WITHDRAW, HEDGE, and REENTER demo proofs anchored to Solana devnet
 - Receipt schema (from `raven/provenance/receipt.py`):
   ```json
   {
-    "policyHash": "raven-v1.0.0",
+    "policyHash": "raven-v1.1.0",
     "txlineSequence": 428,
-    "marketStateHash": "...",
+    "marketStateHash": "<raw TxLINE payload hash>",
+    "commitmentHash": "<canonical decision commitment>",
     "inventoryBefore": "...",
     "action": "CANCEL_AND_HEDGE",
     "reason": "VERIFIED_PENALTY_EVENT",
@@ -113,18 +116,19 @@ Single economic goal: **Risk-adjusted spread capture while surviving match-event
 - `verify.ts`: independent TypeScript verifier — judges run it themselves
 - Files: `raven/provenance/anchor.py`, `raven/provenance/receipt.py`, `raven/provenance/store.py`
 
-### Layer 8 — Deterministic Replay & Counterfactual Lab (F8)
+### Layer 8 — Deterministic Replay & Counterfactual Lab (F8) ✅ IMPLEMENTED
 - Record all TxLINE feeds during hackathon window (live source records automatically)
 - Replay at 1x–1000x with millisecond fidelity; agent reproduces identical decisions
 - Baseline MM (static, event-blind) vs RAVEN — same feed, real comparison metrics
 - **Never pre-picked showcase numbers — all from actual replay output**
-- Counterfactual demo: Baseline -5,120 USDC vs RAVEN -180 USDC (+ RAVEN spread P&L +1,460 before event)
-- Status: **TO IMPLEMENT** — `raven/feed/replay.py` exists (partial), needs counterfactual runner
+- Measured peak worst-case exposure: baseline 2,396.29 vs RAVEN 293.36
+- Measured final worst-case exposure: baseline 2,386.19 vs RAVEN 13.87
+- Peak risk reduction: 87.76% across the same 1,976 real TxLINE frames
 
-### Layer 9 (Bonus) — Adversarial Flow Detector (F9)
+### Layer 9 (Bonus) — Adversarial Flow Detector (F9) ✅ IMPLEMENTED
 - Monitor: repeated flow to agent's stale side, pre-event unidirectional aggression, abnormal fill concentration
 - Response: reduce size → widen spread → shorten expiry → withdraw
-- Status: **TO IMPLEMENT** — `raven/risk/adversarial.py`
+- Fill-derived toxicity is integrated into runtime risk and quote widening
 
 ---
 
@@ -148,10 +152,10 @@ Single economic goal: **Risk-adjusted spread capture while surviving match-event
 |---|---|
 | Core engine | Python (asyncio + websockets) |
 | Feed | TxLINE SSE (live) + recorded replay (demo safety) |
-| On-chain | Solana devnet, Anchor framework |
+| On-chain | TxLINE Anchor validation + RAVEN Solana Memo receipts |
 | Verification | TypeScript (`verify.ts`) |
 | Dashboard | All-black terminal + minimal web frontend |
-| Explanation | LLM (explains decisions, never makes them) |
+| Explanation | Deterministic decision rationale emitted by the Risk Kernel |
 | Bonus | `@txline/sdk` open-source ingestion package |
 
 ---
@@ -181,7 +185,7 @@ Per TxLINE conventions: `game_finalised` event OR `statusId=100` OR `period=100`
 
 | ID | Requirement | Target |
 |---|---|---|
-| NFR1 | Event-to-withdrawal latency | < 250 ms |
+| NFR1 | Event-to-withdrawal ordering | Same decision tick; no shock-frame fill |
 | NFR2 | Determinism | Same input → same output, 100% |
 | NFR3 | Judge testability | No token purchase / deposit required |
 | NFR4 | Replay uptime | Runs flawlessly during review week (July 19–29) |
@@ -197,17 +201,13 @@ Per TxLINE conventions: `game_finalised` event OR `statusId=100` OR `period=100`
 |---|---|
 | 0:00–0:25 | **Problem** — "Most MMs earn until the match changes. One stale quote drains margin." |
 | 0:25–0:45 | **Solution** — RAVEN + tagline |
-| 0:45–2:20 | **Normal flow** — split screen: left TxLINE feed, right RAVEN terminal. Micro spread profits, verified badges |
-| 2:20–3:20 | **WINNER MOMENT** — penalty event, show mechanism (NOT "spread 500%"): |
-| | `21:14:03.184 TxLINE: PENALTY_AWARDED · seq 428` |
-| | `21:14:03.211 Validation confirmed · Solana root matched` |
-| | `21:14:03.229 Risk state: WITHDRAW · 14 quotes cancelled` |
-| | `21:14:03.302 Portfolio shock: Home goal +12,480 USDC` |
-| | `21:14:03.487 Hedge executed · residual +930 USDC` |
-| | `21:14:04.922 Consensus stable · 3 updates` |
-| | `21:14:05.016 Quotes reopened · spread 4.7% → 2.1%` |
-| | `21:14:05.144 Decision receipt confirmed ✓` |
-| 3:20–4:20 | **Counterfactual** — Baseline -5,120 vs RAVEN -180 + RAVEN spread +1,460 before event |
+| 0:45–2:20 | **Normal flow** — start replay; show real TxLINE odds, deterministic fills, inventory, and three quoted markets |
+| 2:20–3:20 | **WINNER MOMENT** — show WITHDRAW, 7 active quotes cancelled, and cross-market hedge |
+| | `Worst-case exposure: -293.36 → -22.72` |
+| | `TxLINE goal seq 118: native Merkle proof validated on devnet` |
+| | `RAVEN receipt: commitment + full hash + Solana Memo verified` |
+| | `RECALIBRATE → REENTER after stable consensus` |
+| 3:20–4:20 | **Counterfactual** — peak risk 2,396.29 baseline vs 293.36 RAVEN; 87.76% reduction |
 | 4:20–5:00 | **Architecture + B2B** — shadow mode + verify.ts live demo |
 
 ---
@@ -233,15 +233,16 @@ Per TxLINE conventions: `game_finalised` event OR `statusId=100` OR `period=100`
 - [x] F4 — Risk Kernel / State Machine (kernel.py)
 - [x] F6 — Self-Hedging Engine (engine.py)
 - [x] F7 — Solana Receipts + verify.ts (anchor.py, receipt.py, store.py)
-- [x] F8 — Replay Source (partial — replay.py exists, counterfactual runner needed)
-- [ ] F5 — Market Dependency Graph (raven/risk/dependency_graph.py)
-- [ ] F8 — Counterfactual Lab runner (baseline vs RAVEN comparison)
-- [ ] F9 — Adversarial Flow Detector (raven/risk/adversarial.py)
-- [ ] F10 — Live Control Room dashboard (terminal + web)
-- [ ] verify.ts — TypeScript receipt verifier
-- [ ] FEEDBACK.md — TxLINE API engineering report
+- [x] F8 — Real score + odds replay source
+- [x] F5 — Market Dependency Graph (raven/risk/dependency_graph.py)
+- [x] F8 — Same-engine Counterfactual Lab
+- [x] F9 — Adversarial Flow Detector integrated into runtime risk
+- [x] F10 — Responsive SSE Control Room dashboard
+- [x] verify.ts — TypeScript receipt and Solana Memo verifier
+- [x] verify_txline.ts — native TxLINE on-chain score verifier
+- [x] FEEDBACK.md — TxLINE API engineering report
 - [ ] Demo video (5 min)
-- [ ] README with LaTeX-documented formulas
+- [x] README with LaTeX-documented formulas
 
 ---
 
@@ -250,12 +251,12 @@ Per TxLINE conventions: `game_finalised` event OR `statusId=100` OR `period=100`
 - [ ] Demo video ≤5 min (Loom/YouTube) — hard screening gate
 - [ ] Public GitHub repo — commit history within hackathon dates (June 24 – July 19, 2026)
 - [ ] Deployed link OR working devnet endpoint (judge-testable, no deposit/token needed)
-- [ ] Technical documentation — core idea + TxLINE endpoints used
-- [ ] FEEDBACK.md — latency measurements, schema suggestions, friction report (not 2 sentences)
-- [ ] verify.ts — independent receipt verification script
+- [x] Technical documentation — core idea + TxLINE endpoints used
+- [x] FEEDBACK.md — schema suggestions and integration friction report
+- [x] verify.ts — independent receipt verification script
 - [ ] New repo/branding (no legacy project mixing)
 - [ ] Human-authored architecture explanation (T&C §5.1 — no agent-control appearance)
-- [ ] LaTeX-documented formulas in README
+- [x] LaTeX-documented formulas in README
 - [ ] No FIFA marks or official sponsor imagery
 
 ---

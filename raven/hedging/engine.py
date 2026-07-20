@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
-from raven.quoting.inventory import Inventory, Position
+from raven.quoting.inventory import Inventory
 
 
 class Shock(str, Enum):
@@ -194,15 +194,20 @@ _ALIASES: Dict[str, str] = {
 }
 
 
-def _canonical(outcome: str) -> Optional[str]:
+def _canonical(market: str, outcome: str) -> Optional[str]:
     key = str(outcome).strip().lower()
+    market_key = str(market).strip().lower()
+    if "handicap" in market_key and key in {"home", "away"}:
+        return f"{key}_ah"
+    if "total" in market_key and key in {"over", "under"}:
+        return key
     if key in _SHIFTS:
         return key
     return _ALIASES.get(key)
 
 
-def _shift(outcome: str, shock: Shock) -> float:
-    canon = _canonical(outcome)
+def _shift(market: str, outcome: str, shock: Shock) -> float:
+    canon = _canonical(market, outcome)
     if canon is None:
         return 0.0
     return _SHIFTS[canon].get(shock, 0.0)
@@ -264,7 +269,7 @@ class HedgeEngine:
             total = 0.0
             contributions: Dict[Tuple[str, str], float] = {}
             for pos in positions:
-                d = pos.quantity * _shift(pos.outcome, shock)
+                d = pos.quantity * _shift(pos.market, pos.outcome, shock)
                 if d != 0.0:
                     contributions[(pos.market, pos.outcome)] = round(d, 6)
                     total += d
@@ -349,31 +354,50 @@ class HedgeEngine:
         best: Optional[HedgeTrade] = None
         best_score = 0.0
 
+        current_loss = max(0.0, -worst.delta)
         for market, outcome, price in self.hedge_universe:
-            shift = _shift(outcome, worst.shock)
+            shift = _shift(market, outcome, worst.shock)
             if shift == 0.0:
                 continue
 
             # We want a position that gains under the worst shock. A long gains
             # when shift > 0; a short gains when shift < 0. Either way, the size
             # that offsets the loss is |delta| / |shift|.
-            size = min(abs(worst.delta) / abs(shift), self.max_hedge_size)
-            if size <= 0.0:
-                continue
+            target_size = min(
+                abs(worst.delta) / abs(shift), self.max_hedge_size
+            )
             side = "buy" if shift > 0.0 else "sell"
 
-            risk_removed = size * abs(shift)
-            cost = size * _round_trip_cost(price)
-            score = risk_removed - self.cost_weight * cost
-            if score > best_score:
-                best_score = score
-                best = HedgeTrade(
+            # A hedge aimed at the current worst scenario can create a larger
+            # loss in another scenario. Test several deterministic sizes and
+            # rank them by the *new portfolio worst case*, not local delta.
+            for fraction in (1.0, 0.5, 0.25, 0.1):
+                size = target_size * fraction
+                if size <= 0.0:
+                    continue
+                candidate = HedgeTrade(
                     market=market,
                     outcome=outcome,
                     side=side,
                     size=round(size, 4),
                     price=price,
                 )
+                trial = _clone(work)
+                trial.apply_fill(
+                    market,
+                    outcome,
+                    candidate.signed_quantity(),
+                    price,
+                )
+                new_worst = self.worst(self.exposures(trial))
+                risk_removed = current_loss - max(0.0, -new_worst.delta)
+                if risk_removed <= 0.0:
+                    continue
+                cost = size * _round_trip_cost(price)
+                score = risk_removed - self.cost_weight * cost
+                if score > best_score:
+                    best_score = score
+                    best = candidate
 
         return best
 
@@ -402,24 +426,34 @@ def _clone(inventory: Inventory) -> Inventory:
 
 
 def _merge(trades: List[HedgeTrade]) -> List[HedgeTrade]:
-    """Collapse repeated trades on the same instrument into one line."""
-    acc: Dict[Tuple[str, str, str], HedgeTrade] = {}
-    order: List[Tuple[str, str, str]] = []
+    """Net repeated and opposing trades into one line per instrument."""
+    acc: Dict[Tuple[str, str], Tuple[float, float, float]] = {}
+    order: List[Tuple[str, str]] = []
     for t in trades:
-        k = (t.market, t.outcome, t.side)
+        k = (t.market, t.outcome)
+        signed = t.signed_quantity()
         if k not in acc:
-            acc[k] = t
             order.append(k)
-        else:
-            prev = acc[k]
-            total = prev.size + t.size
-            # Size-weighted average price for the merged line.
-            price = (prev.size * prev.price + t.size * t.price) / total
-            acc[k] = HedgeTrade(
-                market=t.market,
-                outcome=t.outcome,
-                side=t.side,
-                size=round(total, 4),
-                price=round(price, 6),
+            acc[k] = (0.0, 0.0, 0.0)
+        net, weighted_price, gross = acc[k]
+        acc[k] = (
+            net + signed,
+            weighted_price + t.size * t.price,
+            gross + t.size,
+        )
+
+    merged: List[HedgeTrade] = []
+    for market, outcome in order:
+        net, weighted_price, gross = acc[(market, outcome)]
+        if abs(net) < 1e-6:
+            continue
+        merged.append(
+            HedgeTrade(
+                market=market,
+                outcome=outcome,
+                side="buy" if net > 0 else "sell",
+                size=round(abs(net), 4),
+                price=round(weighted_price / gross, 6),
             )
-    return [acc[k] for k in order]
+        )
+    return merged

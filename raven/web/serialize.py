@@ -18,6 +18,7 @@ from raven.hedging.engine import HedgePlan
 from raven.provenance.store import AnchoredReceipt
 from raven.quoting.engine import QuoteSet
 from raven.quoting.inventory import Inventory
+from raven.pricing.state import MatchState
 
 
 def _round(x: Optional[float], n: int = 6) -> Optional[float]:
@@ -120,6 +121,8 @@ def tick_to_json(
     *,
     tick_index: int,
     inventory: Optional[Inventory] = None,
+    match_state: Optional[MatchState] = None,
+    market_odds: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Serialize a single :class:`TickResult` into a wire message.
 
@@ -130,10 +133,14 @@ def tick_to_json(
     f = result.frame
     d = result.risk
 
-    score = f.score
-    odds = None
-    if f.odds is not None:
+    score = match_state.score if match_state is not None else f.score
+    match_winner = (market_odds or {}).get("match_winner")
+    if match_winner is not None:
+        odds = {k: _round(v, 2) for k, v in match_winner.outcomes.items()}
+    elif f.odds is not None and f.odds.market == "match_winner":
         odds = {k: _round(v, 2) for k, v in f.odds.outcomes.items()}
+    else:
+        odds = None
 
     quotes = quotes_to_json(result.quotes)
 
@@ -143,7 +150,11 @@ def tick_to_json(
         "timestamp_ms": f.timestamp_ms,
         "kind": f.kind.value,
         "fixture_id": f.fixture_id,
-        "match_time": f.match_time,
+        "match_time": (
+            f"{int(match_state.minutes_elapsed)}:{int(match_state.minutes_elapsed % 1 * 60):02d}"
+            if match_state is not None
+            else f.match_time
+        ),
         "event_type": f.event_type.value,
         "is_shock": f.is_shock,
         "is_final": f.is_final,
@@ -165,6 +176,17 @@ def tick_to_json(
         "quotes_count": len(quotes),
         "spread_pnl": _round(result.realized_spread_pnl, 6),
         "hedge": hedge_to_json(result.hedge),
+        "fills": [
+            {
+                "market": fill.market,
+                "outcome": fill.outcome,
+                "side": fill.side,
+                "size": _round(fill.size, 2),
+                "price": _round(fill.price),
+                "reason": fill.reason,
+            }
+            for fill in result.fills
+        ],
         "receipt": receipt_to_json(result.receipt),
         "exposure": exposure_to_json(inventory),
     }

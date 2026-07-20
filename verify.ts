@@ -18,7 +18,7 @@
 
 import * as fs from "fs";
 import * as crypto from "crypto";
-import { Connection, PublicKey, ParsedTransactionWithMeta } from "@solana/web3.js";
+import { Connection } from "@solana/web3.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,15 +28,21 @@ interface DecisionReceipt {
   policyHash: string;
   txlineSequence: number;
   marketStateHash: string;
-  inventoryBefore: Record<string, number>;
+  commitmentHash: string;
+  inventoryBefore: string;
   action: string;
   reason: string;
   quotesCancelled: number;
-  hedgeTransactions: string[];
-  inventoryAfter: Record<string, number>;
+  hedgeTransactions: Record<string, unknown>[];
+  inventoryAfter: string;
+  worstExposureBefore?: number;
+  worstExposureAfter?: number;
   executionTimestamp: number;
+  receiptHash?: string;
   solanaTx?: string;       // devnet transaction signature
-  payloadHash?: string;    // SHA-256 of the raw TxLINE payload
+  anchorBackend?: string;
+  anchored?: boolean;
+  [key: string]: unknown;
 }
 
 interface VerifyResult {
@@ -89,37 +95,77 @@ function sha256(data: string): string {
   return crypto.createHash("sha256").update(data, "utf8").digest("hex");
 }
 
-/**
- * Recompute the receipt commitment the same way the Python agent does:
- *
- *   commit = SHA-256(policy || seq || action || reason || timestamp)
- *
- * This is the canonical minimal commitment; the full payload hash is
- * stored separately in `payloadHash`.
- */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object).sort().map((key) =>
+      `${JSON.stringify(key)}:${canonicalJson(object[key])}`
+    ).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function decisionPayload(r: DecisionReceipt): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    action: r.action,
+    reason: r.reason,
+    fixtureId: r.fixtureId,
+    txlineSequence: r.txlineSequence,
+    marketStateHash: r.marketStateHash,
+    riskScore: r.riskScore,
+    previousState: r.previousState,
+    newState: r.newState,
+    inventoryBefore: r.inventoryBefore,
+    inventoryAfter: r.inventoryAfter,
+    quotesCancelled: r.quotesCancelled,
+    hedgeTransactions: r.hedgeTransactions,
+    executionTimestamp: r.executionTimestamp,
+    policyHash: r.policyHash,
+  };
+  if (r.worstExposureBefore !== undefined) {
+    payload.worstExposureBefore = r.worstExposureBefore;
+  }
+  if (r.worstExposureAfter !== undefined) {
+    payload.worstExposureAfter = r.worstExposureAfter;
+  }
+  return payload;
+}
+
 function computeCommitment(r: DecisionReceipt): string {
-  const input = [
-    r.policyHash,
-    String(r.txlineSequence),
-    r.action,
-    r.reason,
-    String(r.executionTimestamp),
-  ].join("|");
-  return sha256(input);
+  return sha256(canonicalJson(decisionPayload(r)));
+}
+
+function computeReceiptHash(r: DecisionReceipt): string {
+  return sha256(canonicalJson({
+    ...decisionPayload(r),
+    commitmentHash: r.commitmentHash,
+  }));
 }
 
 // ---------------------------------------------------------------------------
 // Main verifier
 // ---------------------------------------------------------------------------
 
-async function verify(receiptPath: string): Promise<VerifyResult> {
+async function verify(receiptPath: string, label = "hedge"): Promise<VerifyResult> {
   const result: VerifyResult = { ok: false, checks: [] };
 
   // --- Load receipt ---
   let receipt: DecisionReceipt;
   try {
     const raw = fs.readFileSync(receiptPath, "utf-8");
-    receipt = JSON.parse(raw) as DecisionReceipt;
+    const parsed = JSON.parse(raw) as DecisionReceipt | {
+      receipts?: DecisionReceipt[];
+    };
+    if ("receipts" in parsed && Array.isArray(parsed.receipts)) {
+      receipt = parsed.receipts.find((item) => item.label === label) ??
+        parsed.receipts[0];
+      if (!receipt) throw new Error("Receipt archive is empty");
+    } else {
+      receipt = parsed as DecisionReceipt;
+    }
   } catch (e) {
     result.checks.push({
       name: "load_receipt",
@@ -139,6 +185,7 @@ async function verify(receiptPath: string): Promise<VerifyResult> {
   const required = [
     "policyHash", "txlineSequence", "action", "reason",
     "executionTimestamp", "inventoryBefore", "inventoryAfter",
+    "marketStateHash", "commitmentHash", "receiptHash",
   ] as const;
   const missing = required.filter((k) => receipt[k] === undefined);
   result.checks.push({
@@ -148,7 +195,7 @@ async function verify(receiptPath: string): Promise<VerifyResult> {
   });
 
   // --- Check 2: policy version ---
-  const EXPECTED_POLICY = "raven-v1.0.0";
+  const EXPECTED_POLICY = "raven-v1.1.0";
   result.checks.push({
     name: "policy_version",
     passed: receipt.policyHash === EXPECTED_POLICY,
@@ -165,24 +212,29 @@ async function verify(receiptPath: string): Promise<VerifyResult> {
     detail: `ts=${receipt.executionTimestamp} (${new Date(receipt.executionTimestamp).toISOString()})`,
   });
 
-  // --- Check 4: commitment hash ---
+  // --- Check 4: TxLINE payload binding + full decision commitment ---
+  const txlineHashOk = /^[a-f0-9]{64}$/.test(receipt.marketStateHash ?? "");
+  result.checks.push({
+    name: "txline_payload_hash",
+    passed: txlineHashOk,
+    detail: txlineHashOk
+      ? `Bound to TxLINE payload ${receipt.marketStateHash.slice(0, 16)}…`
+      : "marketStateHash is not a SHA-256 digest",
+  });
+
   const computed = computeCommitment(receipt);
-  const storedHash = receipt.marketStateHash ?? "";
-  // If marketStateHash is the commitment, verify; otherwise note we can't check
-  const hashCheckable = storedHash.length === 64;
-  if (hashCheckable) {
-    result.checks.push({
-      name: "commitment_hash",
-      passed: computed === storedHash,
-      detail: `computed=${computed.slice(0, 16)}… stored=${storedHash.slice(0, 16)}…`,
-    });
-  } else {
-    result.checks.push({
-      name: "commitment_hash",
-      passed: true,
-      detail: `marketStateHash is a state identifier, not commitment — skipped (commitment=${computed.slice(0, 16)}…)`,
-    });
-  }
+  result.checks.push({
+    name: "commitment_hash",
+    passed: computed === receipt.commitmentHash,
+    detail: `computed=${computed.slice(0, 16)}… stored=${(receipt.commitmentHash ?? "").slice(0, 16)}…`,
+  });
+
+  const computedReceiptHash = computeReceiptHash(receipt);
+  result.checks.push({
+    name: "receipt_hash",
+    passed: computedReceiptHash === receipt.receiptHash,
+    detail: `computed=${computedReceiptHash.slice(0, 16)}… stored=${(receipt.receiptHash ?? "").slice(0, 16)}…`,
+  });
 
   // --- Check 5: Solana devnet anchor ---
   if (receipt.solanaTx) {
@@ -197,13 +249,13 @@ async function verify(receiptPath: string): Promise<VerifyResult> {
     } else {
       // Memo should contain the commitment
       const commitment = computeCommitment(receipt);
-      const memoOk = memo.includes(commitment.slice(0, 32));
+      const memoOk = memo.includes(`RAVEN:${commitment}`);
       result.checks.push({
         name: "solana_anchor",
         passed: memoOk,
         detail: memoOk
-          ? `Memo contains commitment prefix ✓  tx=${receipt.solanaTx.slice(0, 14)}…`
-          : `Memo mismatch — memo="${memo.slice(0, 64)}" commitment_prefix=${commitment.slice(0, 32)}`,
+          ? `Memo contains full commitment; tx=${receipt.solanaTx.slice(0, 14)}…`
+          : `Memo mismatch; memo="${memo.slice(0, 80)}"`,
       });
     }
   } else {
@@ -216,13 +268,14 @@ async function verify(receiptPath: string): Promise<VerifyResult> {
 
   // --- Check 6: inventory direction makes sense for action ---
   if (receipt.action === "CANCEL_AND_HEDGE") {
-    const before = Object.values(receipt.inventoryBefore).reduce((a, b) => a + Math.abs(b), 0);
-    const after  = Object.values(receipt.inventoryAfter).reduce((a, b) => a + Math.abs(b), 0);
-    const reduced = after < before;
+    const before = Math.abs(receipt.worstExposureBefore ?? Number.NaN);
+    const after = Math.abs(receipt.worstExposureAfter ?? Number.NaN);
+    const reduced = Number.isFinite(before) && Number.isFinite(after) &&
+      receipt.hedgeTransactions.length > 0 && after < before;
     result.checks.push({
       name: "inventory_direction",
       passed: reduced,
-      detail: `Total abs exposure: before=${before.toFixed(0)} after=${after.toFixed(0)} ${reduced ? "(reduced ✓)" : "(NOT reduced ✗)"}`,
+      detail: `Worst shock: before=${before.toFixed(2)} after=${after.toFixed(2)}; trades=${receipt.hedgeTransactions.length}`,
     });
   } else {
     result.checks.push({
@@ -269,11 +322,14 @@ function printResult(result: VerifyResult, receiptPath: string): void {
 
 async function main() {
   const args = process.argv.slice(2);
-  let receiptPath = "receipts/latest.json";
+  let receiptPath = "receipts/anchored_demo.json";
+  let label = "hedge";
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--receipt" && args[i + 1]) {
       receiptPath = args[++i];
+    } else if (args[i] === "--label" && args[i + 1]) {
+      label = args[++i];
     }
   }
 
@@ -283,8 +339,8 @@ async function main() {
     process.exit(1);
   }
 
-  const result = await verify(receiptPath);
-  printResult(result, receiptPath);
+  const result = await verify(receiptPath, label);
+  printResult(result, `${receiptPath}#${label}`);
   process.exit(result.ok ? 0 : 1);
 }
 

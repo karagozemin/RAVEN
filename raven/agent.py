@@ -28,6 +28,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
+from raven.execution.simulated import SimulatedExecution, SimulatedFill
 from raven.feed.model import FrameKind, OddsSnapshot, VerifiedFrame
 from raven.hedging.engine import HedgeEngine, HedgePlan
 from raven.pricing.fair_value import FairValue, FairValueEngine
@@ -37,6 +38,8 @@ from raven.provenance.store import AnchoredReceipt, ReceiptEmitter
 from raven.quoting.engine import QuoteEngine, QuoteSet, SpreadInputs
 from raven.quoting.inventory import Inventory
 from raven.risk.kernel import RiskDecision, RiskKernel, RiskSignals, RiskState
+from raven.risk.adversarial import AdversarialFlowDetector, FillRecord
+from raven.risk.dependency_graph import DependencyGraph, MarketState as DependencyMarketState
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,7 @@ class TickResult:
     quotes: Dict[str, QuoteSet] = field(default_factory=dict)
     hedge: Optional[HedgePlan] = None
     receipt: Optional[AnchoredReceipt] = None
+    fills: List[SimulatedFill] = field(default_factory=list)
     realized_spread_pnl: float = 0.0
 
     @property
@@ -115,6 +119,9 @@ class RavenAgent:
         quote: Optional[QuoteEngine] = None,
         risk: Optional[RiskKernel] = None,
         hedge: Optional[HedgeEngine] = None,
+        execution: Optional[SimulatedExecution] = None,
+        dependency_graph: Optional[DependencyGraph] = None,
+        flow_detector: Optional[AdversarialFlowDetector] = None,
         emitter: Optional[ReceiptEmitter] = None,
         latency_budget_ms: float = 2000.0,
         on_tick: Optional[Callable[[TickResult], None]] = None,
@@ -123,6 +130,9 @@ class RavenAgent:
         self.quote = quote or QuoteEngine()
         self.risk = risk or RiskKernel()
         self.hedge = hedge or HedgeEngine()
+        self.execution = execution or SimulatedExecution()
+        self.dependency_graph = dependency_graph or DependencyGraph()
+        self.flow_detector = flow_detector or AdversarialFlowDetector()
         self.emitter = emitter or ReceiptEmitter()
         self.latency_budget_ms = max(1.0, latency_budget_ms)
         self._on_tick = on_tick
@@ -135,12 +145,21 @@ class RavenAgent:
         self._vol: Dict[str, _RollingStat] = {}
         self._last_ts_ms: Optional[int] = None
         self._results: List[TickResult] = []
+        self._last_quotes: Dict[str, QuoteSet] = {}
+        self._last_shock = None
+        self._pre_shock_markets: Optional[Dict[str, DependencyMarketState]] = None
+        self._coherence_signal = 0.0
 
     # -- introspection ------------------------------------------------------
 
     @property
     def results(self) -> List[TickResult]:
         return list(self._results)
+
+    @property
+    def odds(self) -> Dict[str, OddsSnapshot]:
+        """Latest verified consensus snapshot for every observed market."""
+        return dict(self._odds)
 
     def reset(self) -> None:
         """Clean slate for a fresh replay run (F8 counterfactuals)."""
@@ -152,18 +171,55 @@ class RavenAgent:
         self._vol.clear()
         self._last_ts_ms = None
         self._results.clear()
+        self.execution = SimulatedExecution()
+        self.dependency_graph = DependencyGraph()
+        self.flow_detector = AdversarialFlowDetector()
+        self._last_quotes.clear()
+        self._last_shock = None
+        self._pre_shock_markets = None
+        self._coherence_signal = 0.0
 
     # -- main API -----------------------------------------------------------
 
     def on_frame(self, frame: VerifiedFrame) -> TickResult:
         """Advance the whole pipeline by one verified frame."""
+        # Match real consensus moves against the quotes published on the prior
+        # tick. Shock frames never fill: the withdrawal reflex wins the race.
+        fills = self.execution.process(frame, self.inventory)
+        for fill in fills:
+            self.flow_detector.record_fill(
+                FillRecord(
+                    market=fill.market,
+                    outcome=fill.outcome,
+                    side="buy" if fill.side == "customer_buy" else "sell",
+                    size=fill.size,
+                    ts_ms=fill.timestamp_ms,
+                )
+            )
+
         # 1) Update match state (score/clock/red-cards/finalization).
         self.state = self.state.with_frame(frame)
+
+        if frame.is_shock:
+            self._pre_shock_markets = self.dependency_graph.snapshot()
+            self.dependency_graph.record_event(frame)
+            self._last_shock = frame
 
         # 2) Refresh the consensus book if this is an odds frame.
         if frame.kind is FrameKind.ODDS and frame.odds is not None:
             self._odds[frame.odds.market] = frame.odds
             self._track_volatility(frame.odds)
+            self.dependency_graph.update(frame)
+            if self._last_shock is not None:
+                elapsed = frame.timestamp_ms - self._last_shock.timestamp_ms
+                if 0 <= elapsed <= 15_000:
+                    self._coherence_signal = self.dependency_graph.check(
+                        self._last_shock.event_type,
+                        frame.timestamp_ms,
+                        self._pre_shock_markets,
+                    ).score
+                elif elapsed > 15_000:
+                    self._coherence_signal = 0.0
 
         # 3) Derive normalized risk signals for this tick.
         latency = self._latency_signal(frame)
@@ -180,14 +236,33 @@ class RavenAgent:
         quotes: Dict[str, QuoteSet] = {}
         hedge_plan: Optional[HedgePlan] = None
         spread_pnl = 0.0
+        quotes_cancelled = 0
+        inventory_before_action = self.inventory.state_hash()
 
         if decision.state is RiskState.HEDGE:
             hedge_plan = self._run_hedge()
         elif decision.state.is_quoting:
             quotes, spread_pnl = self._run_quotes(latency=latency)
+            self._last_quotes = quotes
+            self.execution.publish(quotes)
+        elif decision.state is RiskState.WITHDRAW and decision.transitioned:
+            quotes_cancelled = self.execution.cancel_all()
 
         # 6) Anchor a receipt for material decisions (F7).
-        receipt = self._maybe_emit_receipt(frame, decision, quotes, hedge_plan)
+        receipt = self._maybe_emit_receipt(
+            frame,
+            decision,
+            hedge_plan,
+            inventory_before_hash=inventory_before_action,
+            inventory_after_hash=self.inventory.state_hash(),
+            quotes_cancelled=quotes_cancelled,
+            worst_exposure_before=(
+                hedge_plan.worst_before.delta if hedge_plan is not None else None
+            ),
+            worst_exposure_after=(
+                hedge_plan.worst_after.delta if hedge_plan is not None else None
+            ),
+        )
 
         result = TickResult(
             frame=frame,
@@ -196,6 +271,7 @@ class RavenAgent:
             quotes=quotes,
             hedge=hedge_plan,
             receipt=receipt,
+            fills=fills,
             realized_spread_pnl=round(spread_pnl, 6),
         )
         self._results.append(result)
@@ -253,10 +329,19 @@ class RavenAgent:
         vol = max(
             (self._volatility_signal(m) for m in self._odds), default=0.0
         )
+        toxicity = max(
+            (
+                signal.toxicity_score
+                for signal in self.flow_detector.assess_all(
+                    self._last_ts_ms or 0
+                ).values()
+            ),
+            default=0.0,
+        )
         return RiskSignals(
             consensus_dev=self._consensus_dev_signal(),
             event_latency=latency,
-            cross_market_incoherence=vol,  # F5 graph refines this later
+            cross_market_incoherence=max(vol, self._coherence_signal, toxicity),
             exposure=self._exposure_signal(),
             feed_confidence=0.0 if self._verified(latency) else 0.4,
         ).clipped()
@@ -283,7 +368,10 @@ class RavenAgent:
                 event_hazard=1.0 if widen else 0.0,
                 latency=latency,
                 volatility=self._volatility_signal(market),
-                incoherence=0.0,
+                incoherence=max(
+                    self._coherence_signal,
+                    self.flow_detector.assess(market, self._last_ts_ms or 0).toxicity_score,
+                ),
             )
             qs = self.quote.quote(fv, self.inventory, risk=risk_inputs)
             quotes[market] = qs
@@ -297,6 +385,12 @@ class RavenAgent:
 
     def _run_hedge(self) -> HedgePlan:
         """Compute and apply the neutralizing cross-market hedge (F6)."""
+        self.hedge.hedge_universe = [
+            (market, outcome, quote.mid)
+            for market, quote_set in self._last_quotes.items()
+            for outcome, quote in quote_set.quotes.items()
+            if not quote.withdrawn
+        ]
         plan = self.hedge.plan(self.inventory)
         for trade in plan.trades:
             self.inventory.apply_fill(
@@ -313,8 +407,13 @@ class RavenAgent:
         self,
         frame: VerifiedFrame,
         decision: RiskDecision,
-        quotes: Dict[str, QuoteSet],
         hedge_plan: Optional[HedgePlan],
+        *,
+        inventory_before_hash: str,
+        inventory_after_hash: str,
+        quotes_cancelled: int,
+        worst_exposure_before: Optional[float],
+        worst_exposure_after: Optional[float],
     ) -> Optional[AnchoredReceipt]:
         """Anchor a receipt for material decisions only (F7).
 
@@ -323,7 +422,6 @@ class RavenAgent:
         the state that produced them is captured on transition instead.
         """
         action: Optional[ReceiptAction] = None
-        quotes_cancelled = 0
         hedge_trades: List[dict] = []
 
         if hedge_plan is not None and not hedge_plan.is_noop:
@@ -340,9 +438,8 @@ class RavenAgent:
             ]
         elif decision.state is RiskState.WITHDRAW and decision.transitioned:
             action = ReceiptAction.WITHDRAW
-            quotes_cancelled = sum(len(qs.quotes) for qs in quotes.values())
-        elif decision.transitioned:
-            action = ReceiptAction.STATE_TRANSITION
+        elif decision.state is RiskState.REENTER and decision.transitioned:
+            action = ReceiptAction.REENTER
 
         if action is None:
             return None
@@ -351,15 +448,17 @@ class RavenAgent:
             action=action,
             reason=decision.reason,
             fixture_id=int(frame.fixture_id or 0),
-            txline_sequence=int(frame.sequence),
+            txline_sequence=int(frame.provider_sequence or frame.sequence),
             market_state_hash=frame.payload_hash,
             risk_score=decision.risk_score,
             previous_state=decision.prior_state.value,
             new_state=decision.state.value,
-            inventory_before_hash=self.inventory.state_hash(),
-            inventory_after_hash=self.inventory.state_hash(),
+            inventory_before_hash=inventory_before_hash,
+            inventory_after_hash=inventory_after_hash,
             quotes_cancelled=quotes_cancelled,
             hedge_trades=hedge_trades,
+            worst_exposure_before=worst_exposure_before,
+            worst_exposure_after=worst_exposure_after,
             execution_timestamp=int(frame.timestamp_ms or _now_ms()),
         )
         return self.emitter.emit(receipt)

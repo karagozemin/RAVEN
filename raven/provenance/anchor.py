@@ -25,7 +25,9 @@ the RPC.
 from __future__ import annotations
 
 import logging
+import json
 import os
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Protocol
 
@@ -71,6 +73,49 @@ class NullAnchor:
         h = receipt.hash()
         logger.debug("NullAnchor: computed receipt hash %s (not written)", h)
         return AnchorResult(hash=h, signature=None, anchored=False, backend=self.backend)
+
+
+class ArchiveAnchor:
+    """Resolve deterministic replay receipts to pre-anchored public proofs.
+
+    A deployed read-only demo must never contain a signing key. This backend
+    loads commitments produced offline with :class:`MemoAnchor` and returns the
+    real devnet signature only when both the commitment and full receipt hash
+    match the current deterministic decision.
+    """
+
+    backend = "memo-archive"
+
+    def __init__(self, path: str | Path) -> None:
+        self._entries: dict[str, dict] = {}
+        archive_path = Path(path)
+        if not archive_path.exists():
+            return
+        try:
+            raw = json.loads(archive_path.read_text(encoding="utf-8"))
+            entries = raw.get("receipts", []) if isinstance(raw, dict) else []
+            self._entries = {
+                str(entry.get("commitmentHash")): entry
+                for entry in entries
+                if isinstance(entry, dict) and entry.get("commitmentHash")
+            }
+        except (OSError, json.JSONDecodeError):
+            logger.warning("ArchiveAnchor: invalid archive at %s", archive_path)
+
+    def anchor(self, receipt: DecisionReceipt) -> AnchorResult:
+        receipt_hash = receipt.hash()
+        entry = self._entries.get(receipt.commitment())
+        matches = (
+            entry is not None
+            and entry.get("receiptHash") == receipt_hash
+            and bool(entry.get("solanaTx"))
+        )
+        return AnchorResult(
+            hash=receipt_hash,
+            signature=str(entry["solanaTx"]) if matches else None,
+            anchored=matches,
+            backend=self.backend if matches else "local",
+        )
 
 
 class MemoAnchor:

@@ -117,6 +117,19 @@
         </div>
       </section>
 
+      <section class="evidence-band" aria-labelledby="evidence-title">
+        <div class="section-index">03 / MEASURED REPLAY</div>
+        <div class="evidence-heading">
+          <h2 id="evidence-title">Same match.<br />Different outcome.</h2>
+          <p>Event-blind baseline and RAVEN run over the exact same ordered TxLINE score and odds frames. Only the risk policy changes.</p>
+        </div>
+        <div class="evidence-stats">
+          <div><strong id="evidenceFrames">1,976</strong><span>REAL TXLINE FRAMES</span></div>
+          <div><strong id="evidenceReduction">87.76%</strong><span>PEAK WORST-CASE RISK REDUCTION</span></div>
+          <div><strong id="evidenceProofs">5</strong><span>4 RECEIPTS + 1 TXLINE ROOT PROOF</span></div>
+        </div>
+      </section>
+
       <section class="landing-cta">
         <div>
           <span>DETERMINISTIC REPLAY / READY</span>
@@ -229,7 +242,10 @@
           <tbody id="quotesBody"><tr class="empty"><td colspan="6">Run the replay to open the quote book</td></tr></tbody>
         </table>
       </div>
-      <div class="pnl-line"><span>SIMULATED SPREAD CAPTURE</span><b id="spreadPnl">+0.000000</b></div>
+      <div class="pnl-line">
+        <span>MODELED SPREAD OPPORTUNITY</span><b id="spreadPnl">+0.000000</b>
+        <span>FILLS</span><b id="fillCount">0</b>
+      </div>
     </section>
 
     <section class="card card-exposure">
@@ -264,11 +280,11 @@
   <footer class="statusbar app-view" aria-hidden="true">
     <span id="provText" class="prov-text">Waiting for verified sequence</span>
     <span class="spacer"></span>
-    <span class="src">RECORDED TXLINE INPUT</span><span class="footer-divider"></span><span>DETERMINISTIC DECISION CORE</span>
+    <span class="src">REAL TXLINE HISTORICAL INPUT</span><span class="footer-divider"></span><span>DETERMINISTIC SIMULATED EXECUTION</span>
   </footer>
 
   <script src="/config.js?v=20260720-2"></script>
-  <script src="/app.js?v=20260720-6"></script>
+  <script src="/app.js?v=20260720-7"></script>
 
 </body>
 </html>

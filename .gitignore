@@ -20,7 +20,6 @@ public/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
 
 # Environment / secrets — NEVER commit real credentials
 .env
@@ -36,6 +35,9 @@ recordings/
 !data/
 !data/replay/
 !data/replay/scores_historical_18222446.jsonl
+!data/replay/odds_historical_18222446.jsonl
+!data/proofs/
+!data/proofs/txline_score_18222446_seq118.json
 
 
 # Temp / generated scripts

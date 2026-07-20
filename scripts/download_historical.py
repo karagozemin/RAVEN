@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Download TxLINE historical SSE data and save as JSONL."""
-import os, json, sys, urllib.request
+import os
+import json
+import sys
+import urllib.request
 
 ENV_FILE = os.path.join(os.path.dirname(__file__), "..", ".env")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "replay")

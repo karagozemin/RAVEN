@@ -82,7 +82,8 @@ def build_source(settings: "Settings") -> FeedSource:
 
         return LiveSSESource(
             url=settings.txline_sse_url,
-            api_key=settings.txline_api_key,
+            api_token=settings.txline_api_token,
+            guest_jwt=settings.txline_jwt,
             competition=settings.txline_competition,
             service_level=settings.txline_service_level,
             record_dir=settings.record_dir,
@@ -100,4 +101,3 @@ def build_source(settings: "Settings") -> FeedSource:
         f"Unknown RAVEN_FEED_MODE={settings.feed_mode!r}. "
         f"Expected 'live' or 'replay'."
     )
-

@@ -16,7 +16,6 @@ import pytest
 from raven.feed.model import (
     FrameKind,
     MatchEventType,
-    Score,
     VerifiedFrame,
 )
 from raven.risk.kernel import (

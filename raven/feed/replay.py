@@ -169,9 +169,12 @@ class ReplaySource(FeedSource):
 
                 payload = record.get("payload")
                 if not isinstance(payload, dict):
-                    continue
+                    # TxLINE historical downloads are raw JSONL records while
+                    # live captures use the Recorder envelope. Both represent
+                    # genuine provider bytes and share the same normalizer.
+                    payload = record
 
-                recv_ms = record.get("recv_ms")
+                recv_ms = record.get("recv_ms", payload.get("Ts"))
                 await self._pace(prev_recv_ms, recv_ms)
                 if isinstance(recv_ms, int):
                     prev_recv_ms = recv_ms

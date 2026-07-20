@@ -1,83 +1,125 @@
-# RAVEN — TxLINE API Feedback Report
+# RAVEN - TxLINE API Feedback
 
-> This report documents our engineering experience with the TxLINE API during the TxODDS World Cup Hackathon 2026.
-
----
+This report documents the integration work completed for the TxODDS World Cup
+Hackathon 2026. It intentionally avoids latency or reliability claims that were
+not measured under a controlled methodology.
 
 ## What Worked Well
 
-### 1. Normalized JSON Schema
-The single, consistent schema across all competition types is genuinely excellent. We were able to build a single ingestion path that handled fixtures, odds, and scores without format branching. This is production-grade API design.
+### Normalized domain model
 
-### 2. SSE Stream Architecture
-Server-Sent Events is the right choice for this use case. The connection lifecycle is simple, reconnect semantics are clear, and the event-stream format integrates naturally with Python's `asyncio`. We experienced zero issues parsing the stream.
+TxLINE's consistent fixture, participant, score, stat, and market concepts made
+it possible to keep one normalization boundary for three connected markets:
+Match Winner, Asian Handicap, and Total Goals. Once normalized, the pricing and
+risk layers no longer need competition-specific adapters.
 
-### 3. Solana Anchor Integration
-Having every TxLINE update cryptographically anchored on-chain is the feature that makes RAVEN possible. The ability to independently verify that a data payload was published at a specific slot — without trusting our own system — is architecturally unique in sports data.
+### Separate odds and score streams
 
-### 4. Historical Replay Endpoints
-The ability to replay past match data with real sequence numbers was critical for building our deterministic replay engine. This is a feature most sports data providers don't offer, and it directly enabled the counterfactual lab.
+The documented SSE endpoints map well to an event-driven trading architecture:
 
-### 5. World Cup Documentation Coverage
-The `worldcup` documentation endpoint was comprehensive. The `statusId=100 / period=100 / game_finalised` convention for match finalization was documented clearly and worked exactly as described.
+- `/api/odds/stream`
+- `/api/scores/stream`
 
----
+RAVEN runs both concurrently, merges them through an async queue, records raw
+payloads before transformation, and reconnects with bounded backoff.
 
-## Friction Points
+### Historical score sequences
 
-### 1. Latency Measurements (P50 / P95)
-We observed the following round-trip latencies from match event occurrence to TxLINE SSE delivery:
+`/api/scores/historical/{fixtureId}` preserved real native `Seq` values. This
+was essential for replay provenance and for requesting a score-stat validation
+proof for an observed record rather than using a fabricated sequence.
 
-| Event Type      | P50 (ms) | P95 (ms) | Max observed (ms) |
-|-----------------|----------|----------|--------------------|
-| Score update    | 340      | 820      | 2,100              |
-| Odds update     | 180      | 430      | 950                |
-| VAR event       | 410      | 1,200    | 3,400              |
-| Match finalised | 290      | 600      | 1,100              |
+### Public on-chain validation
 
-**Recommendation:** Publish a latency SLA per event type. For high-frequency trading use cases (like RAVEN's toxic-flow detector), knowing the guaranteed P99 latency matters for setting withdrawal thresholds.
+The `/api/scores/stat-validation` response plus the public devnet IDL and
+program address made independent verification possible. RAVEN validates fixture
+`18222446`, score sequence `118`, stat key `1`, value `1` against TxLINE's
+`daily_scores_roots` PDA using a read-only `validateStat` simulation.
 
-### 2. Missing `event_type` Enum Documentation
-The `event_type` field in score stream updates contains values like `"GOAL"`, `"RED_CARD"`, `"VAR_DECISION"`, `"PENALTY_AWARDED"` — but we could not find a complete, authoritative enum list in the documentation. We discovered values empirically by observing live streams.
+### Explicit finalization semantics
 
-**Recommendation:** Publish a versioned enum table in the docs. This would have saved ~3 hours of reverse-engineering.
+The documented `game_finalised`, `statusId=100`, and `period=100` conventions
+provide a clear settlement boundary across regulation time, extra time, and
+other terminal outcomes.
 
-### 3. VAR Event Schema Inconsistency
-VAR events occasionally arrived with a nested `var_outcome` object, and occasionally as a flat field. We added a normalizer to handle both cases.
+## Integration Friction
 
-**Recommendation:** Enforce a single schema for VAR events. If `var_outcome` is null (pending review), the field should still be present as `null`, not absent.
+### Credential and network coupling
 
-### 4. Anchor Verification Round-Trip
-Verifying that a TxLINE payload matches its Solana anchor requires fetching the anchor transaction, parsing the Merkle root, and reconstructing the path. The process works, but the documentation assumes familiarity with Merkle proofs. A helper library or even a minimal code snippet would lower the barrier significantly for developers new to on-chain verification.
+Every request needs both a guest Bearer JWT and `X-Api-Token`. The JWT, token,
+API host, Solana cluster, subscription transaction, and program ID must all
+belong to the same network. This is correct from a security perspective, but it
+creates several ways for a first integration to fail with a generic `401` or
+`403`.
 
-**Recommendation:** Publish a `txline-verify` npm/pip package (even minimal) that handles anchor fetching and proof validation. We built one (`verify.ts`) — consider adopting it as official tooling.
+Recommendation: add a single authenticated diagnostics endpoint that reports
+network, subscription tier, token status, JWT expiry, and enabled products
+without exposing secret material.
 
-### 5. Odds Consensus Lag on Match Start
-At kickoff, there was a ~45-second window where odds were delayed relative to the match clock. This created a false positive in our toxic-flow detector, which interpreted the lag as a suspicious silence. We added a `KICKOFF_GRACE` state to handle this.
+### Historical score and odds asymmetry
 
-**Recommendation:** Emit an explicit `feed_state: MATCH_START_WARMUP` event during this window so downstream consumers can handle it cleanly.
+Scores can be fetched by fixture. The historical odds path used by RAVEN is
+organized into epoch-day/hour/five-minute intervals, so obtaining a completed
+fixture requires deriving time buckets, downloading them in parallel, filtering
+by `FixtureId`, market type, period, and line, then deduplicating records.
 
-### 6. No Programmatic Subscription Status Endpoint
-There is no lightweight endpoint to check: "Is my subscription active? What is my current rate limit / credit balance?" We had to infer subscription health from stream behaviour.
+Recommendation: add a fixture-scoped odds NDJSON export such as
+`/api/odds/historical/{fixtureId}` with optional market and line filters.
 
-**Recommendation:** Add a `GET /v1/status` or `GET /v1/subscription` endpoint for programmatic health checks.
+### Sequence semantics differ by product
 
----
+Historical score records expose native `Seq`; historical odds interval records
+do not. A merged replay therefore cannot safely treat one integer as both global
+ordering and provider provenance.
 
-## Feature Requests
+Recommendation: expose a documented provider sequence or stable message ID on
+all historical odds records, and state whether ordering is global, per fixture,
+per market, or per stream.
 
-1. **Bulk historical odds export** — A single endpoint to download all odds updates for a completed fixture as NDJSON. Useful for replay engines and backtesting.
-2. **Webhook push for critical events** — An opt-in webhook for high-priority events (goal, red card, penalty) with <100ms target latency, separate from the SSE stream.
-3. **SDKs** — Official TypeScript and Python SDKs with built-in reconnect, type safety, and anchor verification. We are open to contributing our ingestion layer as a starting point.
+### Schema casing and partial event enrichment
 
----
+The native records use PascalCase fields such as `FixtureId`, `PriceNames`,
+`Prices`, and `Score`, while examples and client-side objects may expose camel
+case. Score events can also arrive as a short event followed by records enriched
+with goal type and player ID. This is manageable, but easy to misinterpret as
+multiple independent goals.
+
+Recommendation: publish generated JSON Schema files for stream and historical
+payloads, including the event enrichment lifecycle and deduplication key.
+
+### On-chain validation setup is powerful but heavy
+
+The validation flow requires the correct IDL, generated types, program ID,
+network host, proof conversion to 32-byte arrays, epoch-day PDA derivation, and
+an Anchor view call. The documentation now covers these pieces, but a consumer
+still assembles substantial boilerplate before validating one stat.
+
+Recommendation: publish an official `@txline/verify` package exposing a small
+API such as `verifyScoreStat({ fixtureId, seq, statKey, predicate })`.
+
+### End-to-end production examples
+
+The individual endpoint examples are useful. The remaining onboarding gap is
+understanding how live streams, historical replay, proof validation, reconnect,
+and production state recovery fit together.
+
+Recommendation: add one end-to-end reference consumer that records both streams,
+detects gaps, rehydrates from historical endpoints, and validates one observed
+score record on-chain.
+
+## Requested Improvements
+
+1. Fixture-scoped bulk historical odds export.
+2. Subscription/token diagnostics endpoint.
+3. Official typed Python and TypeScript clients with reconnect and JWT refresh.
+4. Official on-chain verification helper library.
+5. Versioned schemas and enum tables for score actions, phases, and market types.
+6. Production replay example covering ordering and recovery after disconnect.
 
 ## Summary
 
-TxLINE is the most architecturally interesting sports data API we have used. The on-chain anchoring is genuinely novel and the normalized schema is a real competitive advantage. The friction points above are fixable and none of them are fundamental. With the improvements listed, TxLINE would be production-ready for the most demanding trading desk use cases.
-
-We would be happy to discuss this feedback further in the winner interview.
-
----
-
-*Generated by the RAVEN team — hackathon submission 2026-07-19*
+TxLINE's strongest architectural qualities are normalized sports data, separate
+real-time products, replayable native score sequences, and public Solana roots.
+Those capabilities let RAVEN spend its complexity budget on pricing, portfolio
+risk, and auditability. The largest opportunity is not a new primitive; it is a
+thinner, typed onboarding layer that connects the primitives already available.

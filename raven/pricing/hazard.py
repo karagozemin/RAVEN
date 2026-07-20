@@ -35,7 +35,7 @@ import math
 from dataclasses import dataclass
 from typing import Dict, List
 
-from raven.pricing.state import MatchState, REGULATION_MINUTES
+from raven.pricing.state import MatchState
 
 # Truncation for the per-side goal distribution. P(>=8 more goals for one side
 # in the remainder of a match) is vanishingly small; 8 is a safe cap.

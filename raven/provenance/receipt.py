@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -46,17 +46,18 @@ class ReceiptAction(str, Enum):
 
 # Bump when the receipt schema or hashing changes. verify.ts pins the same
 # string, so a mismatch is a loud, obvious failure rather than a silent one.
-POLICY_VERSION = "raven-v1.0.0"
+POLICY_VERSION = "raven-v1.1.0"
 
 
-def _fmt_float(x: float) -> float:
+def _fmt_float(x: float) -> float | int:
     """Round floats to a fixed precision for hash stability.
 
     Floating point is the classic cross-language hashing footgun: Python and
     JS can print the same number differently. We round to 6 dp everywhere so the
     canonical bytes are identical on both sides.
     """
-    return round(float(x), 6)
+    rounded = round(float(x), 6)
+    return int(rounded) if rounded.is_integer() else rounded
 
 
 def _canonicalize(value: Any) -> Any:
@@ -114,22 +115,19 @@ class DecisionReceipt:
     inventory_after_hash: str
     quotes_cancelled: int = 0
     hedge_trades: List[Dict[str, Any]] = field(default_factory=list)
+    worst_exposure_before: Optional[float] = None
+    worst_exposure_after: Optional[float] = None
     execution_timestamp: int = 0
     policy_version: str = POLICY_VERSION
 
-    def to_payload(self) -> Dict[str, Any]:
-        """The dict that gets hashed and anchored.
-
-        We build it explicitly (rather than dumping ``asdict``) so the on-chain
-        field order/naming is a deliberate contract with :file:`verify.ts`, not
-        an accident of dataclass layout.
-        """
-        return {
+    def _decision_payload(self) -> Dict[str, Any]:
+        """Canonical decision fields covered by the on-chain commitment."""
+        payload: Dict[str, Any] = {
             "action": self.action.value,
             "reason": self.reason,
             "fixtureId": self.fixture_id,
             "txlineSequence": self.txline_sequence,
-            "marketStateHash": self.commitment(),
+            "marketStateHash": self.market_state_hash,
             "riskScore": _fmt_float(self.risk_score),
             "previousState": self.previous_state,
             "newState": self.new_state,
@@ -140,22 +138,30 @@ class DecisionReceipt:
             "executionTimestamp": self.execution_timestamp,
             "policyHash": self.policy_version,
         }
+        if self.worst_exposure_before is not None:
+            payload["worstExposureBefore"] = _fmt_float(
+                self.worst_exposure_before
+            )
+        if self.worst_exposure_after is not None:
+            payload["worstExposureAfter"] = _fmt_float(
+                self.worst_exposure_after
+            )
+        return payload
+
+    def to_payload(self) -> Dict[str, Any]:
+        """The self-contained dict stored off-chain and independently verified.
+
+        We build it explicitly (rather than dumping ``asdict``) so the on-chain
+        field order/naming is a deliberate contract with :file:`verify.ts`, not
+        an accident of dataclass layout.
+        """
+        payload = self._decision_payload()
+        payload["commitmentHash"] = self.commitment()
+        return payload
 
     def commitment(self) -> str:
-        """5-field commitment hash — matches ``computeCommitment`` in verify.ts.
-
-        SHA-256 of: policyHash | txlineSequence | action | reason | executionTimestamp
-        This is what goes into the Solana Memo and into ``marketStateHash`` so
-        verify.ts can recompute and confirm it independently.
-        """
-        raw = "|".join([
-            self.policy_version,
-            str(self.txline_sequence),
-            self.action.value,
-            self.reason,
-            str(self.execution_timestamp),
-        ])
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        """Hash every decision field; this exact digest is written to Solana."""
+        return canonical_hash(self._decision_payload())
 
     def hash(self) -> str:
         """Deterministic SHA-256 of this receipt's canonical payload."""
@@ -181,6 +187,16 @@ class DecisionReceipt:
             inventory_after_hash=payload["inventoryAfter"],
             quotes_cancelled=int(payload.get("quotesCancelled", 0)),
             hedge_trades=list(payload.get("hedgeTransactions", [])),
+            worst_exposure_before=(
+                float(payload["worstExposureBefore"])
+                if payload.get("worstExposureBefore") is not None
+                else None
+            ),
+            worst_exposure_after=(
+                float(payload["worstExposureAfter"])
+                if payload.get("worstExposureAfter") is not None
+                else None
+            ),
             execution_timestamp=int(payload.get("executionTimestamp", 0)),
             policy_version=payload.get("policyHash", POLICY_VERSION),
         )
