@@ -36,6 +36,12 @@ _IMPORTANT_ACTIONS = _SHOCK_ACTIONS | {
     "action_amend",
 }
 _SAMPLE_INTERVAL_MS = 7_000
+_TRANSITION_HOLD_SECONDS = {
+    "WITHDRAW": 0.9,
+    "HEDGE": 0.8,
+    "RECALIBRATE": 0.7,
+    "REENTER": 0.8,
+}
 
 
 def replay_path() -> str:
@@ -210,7 +216,12 @@ def run_replay(
         if max_ticks is not None and tick_index >= max_ticks:
             break
         if frame_delay:
-            time.sleep(frame_delay)
+            hold = (
+                _TRANSITION_HOLD_SECONDS.get(result.state.value, 0.0)
+                if result.risk.transitioned
+                else 0.0
+            )
+            time.sleep(frame_delay + hold)
 
 
 def summary(agent_results: list) -> Dict[str, Any]:

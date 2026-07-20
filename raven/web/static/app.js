@@ -238,6 +238,10 @@ function renderState(t) {
   const state = t.state || "IDLE";
   el.stateBanner.className =
     "state-banner app-view " + (STATE_CLASS[state] || "state-idle");
+  if (t.transitioned) {
+    void el.stateBanner.offsetWidth;
+    el.stateBanner.classList.add("state-arrival");
+  }
   el.stateValue.textContent = state;
   el.stateReason.textContent = t.reason || "";
 
@@ -454,6 +458,10 @@ function renderLog(t) {
     <span class="log-state">${t.state}</span>
     <span class="log-msg">${t.reason || ""}</span>`;
   el.logFeed.prepend(line);
+  el.logFeed.scrollTop = 0;
+  requestAnimationFrame(() => {
+    el.logFeed.scrollTop = 0;
+  });
   while (el.logFeed.children.length > 200) {
     el.logFeed.lastChild.remove();
   }

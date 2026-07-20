@@ -307,6 +307,15 @@ body.control-room-open .risk-fill {
   transition: width 180ms ease-out, background-color 180ms ease-out;
 }
 
+body.control-room-open .state-banner.state-arrival {
+  animation: state-arrival 520ms ease-out;
+}
+
+@keyframes state-arrival {
+  0% { background: color-mix(in srgb, var(--state-color) 22%, #080b09); }
+  100% { background: #080b09; }
+}
+
 body.control-room-open .grid {
   padding: 12px;
   display: grid;

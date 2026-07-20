@@ -228,6 +228,9 @@ threshold and forces `WITHDRAW`.
 near the threshold from causing posture flapping. The Control Room applies a
 separate presentation filter and records transitions, shocks, receipts, hedge
 actions, and periodic checkpoints instead of rendering every input frame.
+For demo observability, the SSE presentation layer holds critical transition
+frames for 0.7-0.9 seconds; this does not alter decision order, timestamps,
+receipt hashes, or counterfactual results.
 
 ```mermaid
 stateDiagram-v2

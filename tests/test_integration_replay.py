@@ -4,6 +4,7 @@ from raven.agent import RavenAgent
 from raven.counterfactual import run_counterfactual
 from raven.provenance.anchor import ArchiveAnchor
 from raven.provenance.store import ReceiptEmitter
+from raven.web import driver as web_driver
 from raven.web.driver import iter_verified_frames, run_replay
 
 
@@ -124,3 +125,17 @@ def test_web_receipt_exposes_clickable_proof_detail() -> None:
     assert receipt["detail"]["receiptHash"] == receipt["hash"]
     assert len(receipt["detail"]["commitmentHash"]) == 64
     assert len(receipt["detail"]["marketStateHash"]) == 64
+
+
+def test_demo_stream_holds_each_critical_transition(monkeypatch) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr(web_driver.time, "sleep", sleeps.append)
+    list(run_replay(speed=12, max_ticks=405))
+
+    base_delay = 1.0 / 12.0
+    transition_holds = [
+        round(delay - base_delay, 1)
+        for delay in sleeps
+        if delay > base_delay + 0.1
+    ]
+    assert transition_holds == [0.9, 0.8, 0.7, 0.8]
