@@ -68,6 +68,7 @@ Single economic goal: **Risk-adjusted spread capture while surviving match-event
 
 ### Layer 4 — Risk Kernel / State Machine (F4) ✅ IMPLEMENTED
 - States: `NORMAL → CAUTION → WITHDRAW → HEDGE → RECALIBRATE → REENTER`
+- `CAUTION → NORMAL` requires 3 consecutive shock-free updates below the relief band to prevent threshold flapping
 - On verified critical event: cancel all quotes → exit cluster → hedge → wait 3 stable updates → re-quote
 - Risk score formula:
   ```

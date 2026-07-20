@@ -171,8 +171,22 @@ def test_caution_back_to_normal_when_risk_subsides():
     k = RiskKernel()
     k.observe(calm_frame(), RiskSignals(consensus_dev=1.0, event_latency=0.4))
     assert k.state is RiskState.CAUTION
+    assert k.observe(calm_frame(), CALM).state is RiskState.CAUTION
+    assert k.observe(calm_frame(), CALM).state is RiskState.CAUTION
     d = k.observe(calm_frame(), CALM)
     assert d.state is RiskState.NORMAL
+
+
+def test_caution_hysteresis_prevents_threshold_flapping():
+    k = RiskKernel(caution_clear_updates=3, caution_relief=0.08)
+    elevated = RiskSignals(consensus_dev=1.0, event_latency=0.4)
+    k.observe(calm_frame(), elevated)
+    assert k.state is RiskState.CAUTION
+
+    states = []
+    for signals in (CALM, elevated, CALM, elevated, CALM):
+        states.append(k.observe(calm_frame(), signals).state)
+    assert states == [RiskState.CAUTION] * 5
 
 
 def test_normal_to_withdraw_on_high_score_without_shock():
@@ -446,3 +460,10 @@ def test_invalid_stable_updates_raise():
 def test_negative_reenter_relief_raises():
     with pytest.raises(ValueError):
         RiskKernel(reenter_relief=-0.1)
+
+
+def test_invalid_caution_hysteresis_raises():
+    with pytest.raises(ValueError):
+        RiskKernel(caution_clear_updates=0)
+    with pytest.raises(ValueError):
+        RiskKernel(caution_threshold=0.35, caution_relief=0.5)

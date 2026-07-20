@@ -94,7 +94,7 @@ The risk lifecycle is explicit:
 stateDiagram-v2
     [*] --> NORMAL
     NORMAL --> CAUTION: risk rises
-    CAUTION --> NORMAL: risk clears
+    CAUTION --> NORMAL: 3 clear updates below relief band
     NORMAL --> WITHDRAW: verified shock or critical risk
     CAUTION --> WITHDRAW: verified shock or critical risk
     WITHDRAW --> HEDGE: quotes cancelled

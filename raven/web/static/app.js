@@ -466,7 +466,9 @@ function handleTick(t) {
   renderQuotes(t);
   renderExposure(t);
   renderReceipt(t);
-  renderLog(t);
+  const decisionWorthy =
+    t.transitioned || t.is_shock || t.receipt || t.hedge || (t.tick || 0) % 50 === 0;
+  if (decisionWorthy) renderLog(t);
   renderFooter(t);
 }
 

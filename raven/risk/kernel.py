@@ -242,6 +242,10 @@ class RiskKernel:
         Number of consecutive stable, verified, shock-free updates required in
         RECALIBRATE before RAVEN is allowed to REENTER (the PRD's "3 consecutive
         stable updates").
+    caution_clear_updates / caution_relief:
+        CAUTION only clears after this many consecutive updates below
+        ``caution_threshold - caution_relief``. This hysteresis prevents
+        different market frames from making the posture flap around one edge.
     reenter_relief:
         How much the risk score must fall *below* ``caution_threshold`` before
         REENTER hands back to NORMAL, providing hysteresis so RAVEN doesn't
@@ -262,6 +266,8 @@ class RiskKernel:
         withdraw_threshold: float = 0.65,
         stable_updates_required: int = 3,
         reenter_relief: float = 0.10,
+        caution_clear_updates: int = 3,
+        caution_relief: float = 0.08,
     ) -> None:
         if not 0.0 <= caution_threshold <= withdraw_threshold <= 1.0:
             raise ValueError(
@@ -269,17 +275,24 @@ class RiskKernel:
             )
         if stable_updates_required < 1:
             raise ValueError("stable_updates_required must be >= 1")
+        if caution_clear_updates < 1:
+            raise ValueError("caution_clear_updates must be >= 1")
         if reenter_relief < 0.0:
             raise ValueError("reenter_relief must be >= 0")
+        if not 0.0 <= caution_relief <= caution_threshold:
+            raise ValueError("caution_relief must be between 0 and caution_threshold")
 
         self.weights = (weights or RiskWeights()).validate()
         self.caution_threshold = caution_threshold
         self.withdraw_threshold = withdraw_threshold
         self.stable_updates_required = stable_updates_required
         self.reenter_relief = reenter_relief
+        self.caution_clear_updates = caution_clear_updates
+        self.caution_relief = caution_relief
 
         self._state: RiskState = RiskState.NORMAL
         self._stable_count: int = 0
+        self._caution_clear_count: int = 0
         self._history: List[RiskDecision] = []
 
     # -- introspection ------------------------------------------------------
@@ -357,6 +370,14 @@ class RiskKernel:
             else:
                 self._stable_count = 0
 
+        if self._state is RiskState.CAUTION:
+            clear_below = self.caution_threshold - self.caution_relief
+            if not is_shock and score <= clear_below:
+                self._caution_clear_count += 1
+            else:
+                self._caution_clear_count = 0
+        else:
+            self._caution_clear_count = 0
 
         next_state, reason = self._next_state(
             score=score,
@@ -368,6 +389,8 @@ class RiskKernel:
         # The counter only has meaning while recalibrating; clear it on exit.
         if next_state is not RiskState.RECALIBRATE:
             self._stable_count = 0
+        if next_state is not RiskState.CAUTION:
+            self._caution_clear_count = 0
 
         self._state = next_state
 
@@ -387,6 +410,7 @@ class RiskKernel:
         """Return to a clean NORMAL posture (used between replay runs, F8)."""
         self._state = RiskState.NORMAL
         self._stable_count = 0
+        self._caution_clear_count = 0
         self._history.clear()
 
     # -- transition logic ---------------------------------------------------
@@ -443,8 +467,18 @@ class RiskKernel:
                     f"risk score {score:.3f} >= withdraw "
                     f"{self.withdraw_threshold:.2f}",
                 )
-            if score < self.caution_threshold:
-                return (RiskState.NORMAL, "risk subsided; back to base spread")
+            if self._caution_clear_count >= self.caution_clear_updates:
+                return (
+                    RiskState.NORMAL,
+                    f"risk clear for {self.caution_clear_updates} updates; "
+                    "back to base spread",
+                )
+            if self._caution_clear_count:
+                return (
+                    RiskState.CAUTION,
+                    f"risk easing; clear confirmation "
+                    f"({self._caution_clear_count}/{self.caution_clear_updates})",
+                )
             return (RiskState.CAUTION, f"elevated risk {score:.3f}; widened")
 
         if state is RiskState.WITHDRAW:

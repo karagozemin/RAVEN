@@ -214,11 +214,18 @@ $$
 flow toxicity. A verified goal/red-card/penalty/VAR shock bypasses the blended
 threshold and forces `WITHDRAW`.
 
+`CAUTION` uses hysteresis rather than a single-edge comparison: it returns to
+`NORMAL` only after three consecutive shock-free updates below
+`caution_threshold - caution_relief`. This prevents alternating market frames
+near the threshold from causing posture flapping. The Control Room applies a
+separate presentation filter and records transitions, shocks, receipts, hedge
+actions, and periodic checkpoints instead of rendering every input frame.
+
 ```mermaid
 stateDiagram-v2
     [*] --> NORMAL
     NORMAL --> CAUTION: risk >= caution threshold
-    CAUTION --> NORMAL: risk clears
+    CAUTION --> NORMAL: 3 updates below relief band
     NORMAL --> WITHDRAW: shock or critical score
     CAUTION --> WITHDRAW: shock or critical score
     WITHDRAW --> HEDGE: quote cancellation complete
