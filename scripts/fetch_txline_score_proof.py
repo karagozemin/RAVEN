@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import urllib.parse
@@ -12,12 +13,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURE_ID = 18222446
-SEQUENCE = 118
-STAT_KEY = 1
-OUTPUT = ROOT / "data/proofs/txline_score_18222446_seq118.json"
-
-
 def _json_request(
     url: str,
     *,
@@ -30,6 +25,17 @@ def _json_request(
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--fixture", type=int, default=18257739)
+    parser.add_argument("--sequence", type=int, default=1188)
+    parser.add_argument("--stat-key", type=int, default=1)
+    parser.add_argument("--expected-value", type=int, default=1)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=ROOT / "data/proofs/txline_score_18257739_seq1188.json",
+    )
+    args = parser.parse_args()
     load_dotenv(ROOT / ".env")
     api_base = os.environ.get(
         "TXLINE_SSE_URL", "https://txline-dev.txodds.com/api"
@@ -44,7 +50,7 @@ def main() -> int:
         data=b"{}",
     )["token"]
     query = urllib.parse.urlencode(
-        {"fixtureId": FIXTURE_ID, "seq": SEQUENCE, "statKey": STAT_KEY}
+        {"fixtureId": args.fixture, "seq": args.sequence, "statKey": args.stat_key}
     )
     proof = _json_request(
         f"{api_base}/scores/stat-validation?{query}",
@@ -58,15 +64,15 @@ def main() -> int:
         "network": "solana-devnet",
         "apiHost": origin,
         "programId": "6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J",
-        "fixtureId": FIXTURE_ID,
-        "sequence": SEQUENCE,
-        "statKey": STAT_KEY,
-        "expectedValue": 1,
+        "fixtureId": args.fixture,
+        "sequence": args.sequence,
+        "statKey": args.stat_key,
+        "expectedValue": args.expected_value,
         "validation": proof,
     }
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
-    print(f"Saved public TxLINE proof to {OUTPUT}")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(artifact, indent=2) + "\n", encoding="utf-8")
+    print(f"Saved public TxLINE proof to {args.output}")
     return 0
 
 

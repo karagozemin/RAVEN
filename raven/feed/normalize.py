@@ -112,6 +112,9 @@ def _extract_odds(payload: Mapping[str, Any]) -> Optional[OddsSnapshot]:
                 "OVERUNDER_PARTICIPANT_GOALS": f"total_goals@{line}",
             }
             market = market_names.get(super_type, super_type.lower())
+            period = str(payload.get("MarketPeriod") or "").strip().lower()
+            if period:
+                market = f"{period}:{market}"
             return OddsSnapshot(market=market, outcomes=converted) if converted else None
     if not isinstance(odds, Mapping):
         return None

@@ -5,7 +5,7 @@ import { ComputeBudgetProgram, Connection, Keypair, PublicKey } from "@solana/we
 import BN from "bn.js";
 import * as fs from "fs";
 import idl from "./txline/txoracle.devnet.json";
-import proofArtifact from "./data/proofs/txline_score_18222446_seq118.json";
+import proofArtifact from "./data/proofs/txline_score_18257739_seq1188.json";
 
 type ProofNode = { hash: number[] | string; isRightSibling: boolean };
 

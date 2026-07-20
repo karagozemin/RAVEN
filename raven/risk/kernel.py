@@ -430,6 +430,9 @@ class RiskKernel:
         """
         state = self._state
 
+        if frame.is_final and state not in {RiskState.WITHDRAW, RiskState.HEDGE}:
+            return (RiskState.WITHDRAW, "match finalised; market closed")
+
         # Hard reflex (FR4.2): a verified shock forces WITHDRAW from any posture
         # that is currently exposed to the market.
         if is_shock and state in {

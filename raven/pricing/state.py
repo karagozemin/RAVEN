@@ -57,9 +57,10 @@ def parse_clock_minutes(match_time: Optional[str]) -> Optional[float]:
 class MatchState:
     """A deterministic snapshot of match progress for pricing.
 
-    ``minutes_elapsed`` is clamped to ``[0, REGULATION_MINUTES]`` for the
-    remaining-time budget; ``red_home`` / ``red_away`` capture man-advantage,
-    which shifts goal intensities.
+    ``minutes_elapsed`` retains the provider clock through extra time. The
+    remaining-time budget still floors at zero after regulation;
+    ``red_home`` / ``red_away`` capture man-advantage, which shifts goal
+    intensities.
     """
 
     minutes_elapsed: float = 0.0
@@ -89,8 +90,8 @@ class MatchState:
         ``is_final``. Unknown / odd frames leave the state unchanged.
         """
         minutes = parse_clock_minutes(frame.match_time)
-        new_minutes = self.minutes_elapsed if minutes is None else min(
-            max(minutes, 0.0), REGULATION_MINUTES
+        new_minutes = (
+            self.minutes_elapsed if minutes is None else max(minutes, 0.0)
         )
 
         new_score = frame.score if frame.score is not None else self.score

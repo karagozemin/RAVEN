@@ -17,17 +17,20 @@ def _run(agent: RavenAgent | None = None) -> RavenAgent:
 
 def test_packaged_replay_is_real_multimarket_and_monotonic() -> None:
     frames = list(iter_verified_frames())
-    assert len(frames) == 1976
-    assert [frame.sequence for frame in frames] == list(range(1, 1977))
+    assert len(frames) == 2499
+    assert [frame.sequence for frame in frames] == list(range(1, 2500))
     assert {frame.odds.market for frame in frames if frame.odds} == {
         "match_winner",
         "asian_handicap@-0.5",
         "total_goals@2.5",
+        "et:match_winner",
+        "et:asian_handicap@-0.5",
+        "et:total_goals@0.5",
     }
-    assert all(frame.fixture_id == 18222446 for frame in frames)
+    assert all(frame.fixture_id == 18257739 for frame in frames)
     proven = [frame for frame in frames if frame.verified]
     assert [(frame.provider_sequence, frame.event_type.value) for frame in proven] == [
-        (118, "GOAL")
+        (1188, "GOAL")
     ]
     assert proven[0].score is not None
     assert proven[0].score.as_tuple() == (1, 0)
@@ -90,14 +93,14 @@ def test_archived_receipts_match_current_replay() -> None:
         "REENTER",
         "WITHDRAW",
     ]
-    assert anchored[0].receipt.txline_sequence == 118
-    assert anchored[3].receipt.txline_sequence == 663
+    assert anchored[0].receipt.txline_sequence == 1188
+    assert anchored[3].receipt.txline_sequence == 1385
     assert all(receipt.anchor.signature for receipt in anchored)
 
 
 def test_counterfactual_uses_same_frames_and_reduces_peak_risk() -> None:
     result = run_counterfactual(print_result=False)
-    assert result.baseline.frames == result.raven.frames == 1976
+    assert result.baseline.frames == result.raven.frames == 2499
     assert result.baseline.peak_worst_case_loss > result.raven.peak_worst_case_loss
     expected = round(
         (
@@ -110,14 +113,14 @@ def test_counterfactual_uses_same_frames_and_reduces_peak_risk() -> None:
     )
     assert result.peak_risk_reduction == expected
     assert result.peak_risk_reduction > 80.0
-    assert result.baseline.manual_interventions == 3
+    assert result.baseline.manual_interventions == 1
     assert result.raven.manual_interventions == 0
 
 
 def test_web_receipt_exposes_clickable_proof_detail() -> None:
     receipt = next(
         tick["receipt"]
-        for tick in run_replay(speed=0, max_ticks=450)
+        for tick in run_replay(speed=0, max_ticks=2450)
         if tick["receipt"] and tick["receipt"]["anchored"]
     )
     assert receipt["signature"]
@@ -127,10 +130,30 @@ def test_web_receipt_exposes_clickable_proof_detail() -> None:
     assert len(receipt["detail"]["marketStateHash"]) == 64
 
 
+def test_final_replay_exposes_true_fixture_and_goal_metadata() -> None:
+    goal = next(
+        tick
+        for tick in run_replay(speed=0, max_ticks=2400)
+        if tick["event_type"] == "GOAL"
+    )
+    assert goal["fixture"]["competition"] == "WORLD CUP FINAL"
+    assert goal["fixture"]["home"]["name"] == "Spain"
+    assert goal["fixture"]["away"]["name"] == "Argentina"
+    assert goal["score"] == {"home": 1, "away": 0}
+    assert goal["event"] == {
+        "team": "Spain",
+        "team_code": "ESP",
+        "flag": "🇪🇸",
+        "player": "Ferran Torres",
+        "minute": 106,
+        "clock": "105:39",
+    }
+
+
 def test_demo_stream_holds_each_critical_transition(monkeypatch) -> None:
     sleeps: list[float] = []
     monkeypatch.setattr(web_driver.time, "sleep", sleeps.append)
-    list(run_replay(speed=12, max_ticks=405))
+    list(run_replay(speed=12, max_ticks=2410))
 
     base_delay = 1.0 / 12.0
     transition_holds = [

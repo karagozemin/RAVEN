@@ -21,6 +21,24 @@ from raven.quoting.inventory import Inventory
 from raven.pricing.state import MatchState
 
 
+_FIXTURES: Dict[int, Dict[str, Any]] = {
+    18257739: {
+        "competition": "WORLD CUP FINAL",
+        "home": {"name": "Spain", "code": "ESP", "flag": "🇪🇸", "participant": 1},
+        "away": {
+            "name": "Argentina",
+            "code": "ARG",
+            "flag": "🇦🇷",
+            "participant": 2,
+        },
+    }
+}
+
+_PLAYERS = {
+    889209: "Ferran Torres",
+}
+
+
 def _round(x: Optional[float], n: int = 6) -> Optional[float]:
     if x is None:
         return None
@@ -141,9 +159,15 @@ def tick_to_json(
     """
     f = result.frame
     d = result.risk
+    fixture = _FIXTURES.get(int(f.fixture_id or 0))
 
     score = match_state.score if match_state is not None else f.score
-    match_winner = (market_odds or {}).get("match_winner")
+    winner_markets = [
+        odds_snapshot
+        for market, odds_snapshot in (market_odds or {}).items()
+        if market == "match_winner" or market.endswith(":match_winner")
+    ]
+    match_winner = winner_markets[-1] if winner_markets else None
     if match_winner is not None:
         odds = {k: _round(v, 2) for k, v in match_winner.outcomes.items()}
     elif f.odds is not None and f.odds.market == "match_winner":
@@ -153,18 +177,41 @@ def tick_to_json(
 
     quotes = quotes_to_json(result.quotes)
 
+    event = None
+    if f.event_type.value != "OTHER":
+        participant = f.raw.get("Participant")
+        side = None
+        if fixture is not None:
+            if participant == fixture["home"]["participant"]:
+                side = fixture["home"]
+            elif participant == fixture["away"]["participant"]:
+                side = fixture["away"]
+        raw_clock = f.raw.get("Clock")
+        seconds = raw_clock.get("Seconds") if isinstance(raw_clock, dict) else None
+        player_id = (f.raw.get("Data") or {}).get("PlayerId")
+        event = {
+            "team": side["name"] if side else None,
+            "team_code": side["code"] if side else None,
+            "flag": side["flag"] if side else None,
+            "player": _PLAYERS.get(player_id),
+            "minute": int(seconds) // 60 + 1 if seconds is not None else None,
+            "clock": f.match_time,
+        }
+
     return {
         "tick": tick_index,
         "sequence": f.sequence,
         "timestamp_ms": f.timestamp_ms,
         "kind": f.kind.value,
         "fixture_id": f.fixture_id,
+        "fixture": fixture,
         "match_time": (
             f"{int(match_state.minutes_elapsed)}:{int(match_state.minutes_elapsed % 1 * 60):02d}"
             if match_state is not None
             else f.match_time
         ),
         "event_type": f.event_type.value,
+        "event": event,
         "is_shock": f.is_shock,
         "is_final": f.is_final,
         "verified": f.verified,

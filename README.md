@@ -35,7 +35,7 @@ Built for the **Trading Tools and Agents** track of the TxODDS World Cup Hackath
 
 | Surface | Implementation |
 | --- | --- |
-| Market data | Real TxLINE historical odds, scores, and events for fixture `18222446` |
+| Market data | Real TxLINE World Cup Final odds, scores, and events for fixture `18257739` |
 | Live ingestion | Authenticated TxLINE odds and scores SSE clients with reconnect and JWT refresh |
 | Markets | Match Winner, Asian Handicap `-0.5`, Total Goals `2.5` |
 | Execution | Deterministic simulated matching; TxLINE is a data provider, not an execution venue |
@@ -47,23 +47,27 @@ The web demo is a replay because the reviewed match has ended. It does not
 generate odds or alter downloaded prices. Historical and live frames enter the
 same normalizer and decision core.
 
+The packaged replay is the FIFA World Cup 2026 Final: **Spain 1-0 Argentina**.
+It includes regulation and extra-time TxLINE markets, Ferran Torres's verified
+winner at `105:39` (`106'`), and the finalization event at `120:24`.
+
 ## Measured Replay
 
-Both policies below process the same ordered `1,976` real TxLINE frames. The
+Both policies below process the same ordered `2,499` real TxLINE frames. The
 baseline always quotes a static spread with no practical inventory cap and
 never hedges. RAVEN runs the full risk policy. Execution and matching are
 identical for both.
 
 | Metric | Event-blind baseline | RAVEN |
 | --- | ---: | ---: |
-| Deterministic fills | 4,204 | 2,600 |
-| Quotes cancelled | 0 | 21 |
-| Hedge trades | 0 | 6 |
-| Peak worst-case shock loss | 4,438.07 | 269.78 |
-| Final worst-case shock loss | 4,432.24 | 269.78 |
-| Manual interventions required | 3 | 0 |
+| Deterministic fills | 4,622 | 2,986 |
+| Quotes cancelled | 0 | 14 |
+| Hedge trades | 0 | 3 |
+| Peak worst-case shock loss | 7,801.31 | 391.85 |
+| Final worst-case shock loss | 5,510.21 | 32.29 |
+| Manual interventions required | 1 | 0 |
 
-**Peak worst-case risk reduction: 93.92%.** These values are calculated by
+**Peak worst-case risk reduction: 94.98%.** These values are calculated by
 `raven/counterfactual.py`; they are not hard-coded P&L claims.
 
 ```bash
@@ -210,7 +214,7 @@ RAVEN exposes two independent proof chains:
 
 ```mermaid
 flowchart TB
-    SCORE[TxLINE score seq 118] --> MERKLE[TxLINE stat-validation proof]
+    SCORE[TxLINE final goal seq 1188] --> MERKLE[TxLINE stat-validation proof]
     MERKLE --> ROOT[TxLINE daily_scores_roots PDA]
     ROOT --> TV[verify_txline.ts]
 

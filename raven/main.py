@@ -157,6 +157,7 @@ def main(argv: List[str] | None = None) -> int:
     replay_name = Path(settings.replay_file).name
     if settings.is_replay and replay_name in {
         "scores_historical.jsonl",
+        "scores_historical_18257739.jsonl",
         "scores_historical_18222446.jsonl",
     }:
         from raven.web.driver import iter_verified_frames

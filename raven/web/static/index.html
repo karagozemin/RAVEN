@@ -124,8 +124,8 @@
           <p>Event-blind baseline and RAVEN run over the exact same ordered TxLINE score and odds frames. Only the risk policy changes.</p>
         </div>
         <div class="evidence-stats">
-          <div><strong id="evidenceFrames">1,976</strong><span>REAL TXLINE FRAMES</span></div>
-          <div><strong id="evidenceReduction">93.92%</strong><span>PEAK WORST-CASE RISK REDUCTION</span></div>
+          <div><strong id="evidenceFrames">2,499</strong><span>REAL TXLINE FRAMES</span></div>
+          <div><strong id="evidenceReduction">94.98%</strong><span>PEAK WORST-CASE RISK REDUCTION</span></div>
           <div><strong id="evidenceProofs">5</strong><span>4 RECEIPTS + 1 TXLINE ROOT PROOF</span></div>
         </div>
       </section>
@@ -174,8 +174,8 @@
         <span>REPLAY RATE</span>
         <select id="speed">
           <option value="6">0.5×</option>
-          <option value="12" selected>1×</option>
-          <option value="24">2×</option>
+          <option value="12">1×</option>
+          <option value="24" selected>2×</option>
           <option value="60">5×</option>
           <option value="120">10×</option>
         </select>
@@ -210,8 +210,12 @@
 
   <main class="grid app-view" aria-hidden="true">
     <section class="card card-score">
-      <header class="card-head"><div><span class="panel-index">01</span><h2 class="card-title">Market context</h2></div><span class="panel-status">1X2</span></header>
-      <div class="score-meta"><span>HOME</span><span>LIVE SCORE</span><span>AWAY</span></div>
+      <header class="card-head"><div><span class="panel-index">01</span><h2 class="card-title">Market context</h2></div><span id="competitionLabel" class="panel-status">WORLD CUP FINAL</span></header>
+      <div class="score-meta">
+        <span class="team-label"><b id="homeFlag">🇪🇸</b><span id="homeTeam">SPAIN</span></span>
+        <span>LIVE SCORE</span>
+        <span class="team-label team-label-away"><span id="awayTeam">ARGENTINA</span><b id="awayFlag">🇦🇷</b></span>
+      </div>
       <div class="scoreboard">
         <span id="scoreHome" class="team-score">0</span>
         <span class="score-sep">:</span>
@@ -219,9 +223,9 @@
       </div>
       <div class="odds-label">CONSENSUS DECIMAL ODDS</div>
       <div class="odds-row">
-        <div class="odds-cell"><span>HOME / 1</span><b id="oddHome">—</b></div>
+        <div class="odds-cell"><span id="homeOddsLabel">SPAIN / 1</span><b id="oddHome">—</b></div>
         <div class="odds-cell"><span>DRAW / X</span><b id="oddDraw">—</b></div>
-        <div class="odds-cell"><span>AWAY / 2</span><b id="oddAway">—</b></div>
+        <div class="odds-cell"><span id="awayOddsLabel">ARGENTINA / 2</span><b id="oddAway">—</b></div>
       </div>
       <div class="feed-proof">
         <div><span>TICK</span><b id="tickNum">0</b></div>

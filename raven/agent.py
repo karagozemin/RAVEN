@@ -150,6 +150,7 @@ class RavenAgent:
         self._last_shock = None
         self._pre_shock_markets: Optional[Dict[str, DependencyMarketState]] = None
         self._coherence_signal = 0.0
+        self._market_period: Optional[str] = None
 
     # -- introspection ------------------------------------------------------
 
@@ -179,6 +180,7 @@ class RavenAgent:
         self._last_shock = None
         self._pre_shock_markets = None
         self._coherence_signal = 0.0
+        self._market_period = None
 
     # -- main API -----------------------------------------------------------
 
@@ -208,6 +210,18 @@ class RavenAgent:
 
         # 2) Refresh the consensus book if this is an odds frame.
         if frame.kind is FrameKind.ODDS and frame.odds is not None:
+            period = str(frame.raw.get("MarketPeriod") or "regulation")
+            if self._market_period is not None and period != self._market_period:
+                # Full-time contracts settle before extra time. Do not carry
+                # their stale quotes into the ET market namespace.
+                self.execution.cancel_all()
+                self._odds.clear()
+                self._fair.clear()
+                self._vol.clear()
+                self._last_quotes.clear()
+                self.dependency_graph = DependencyGraph()
+                self._coherence_signal = 0.0
+            self._market_period = period
             self._odds[frame.odds.market] = frame.odds
             self._track_volatility(frame.odds)
             self.dependency_graph.update(frame)

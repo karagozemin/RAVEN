@@ -44,7 +44,7 @@ def main():
     os.makedirs(DATA_DIR, exist_ok=True)
 
     # Fixtures to try
-    fixtures = [18222446, 18257739, 18257865, 18241006, 18237038]
+    fixtures = [18257739, 18257865, 18241006, 18237038, 18222446]
 
     for fid in fixtures:
         url = f"{base}/scores/historical/{fid}"

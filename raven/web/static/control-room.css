@@ -411,6 +411,14 @@ body.control-room-open .pill {
   letter-spacing: 1px;
 }
 .score-meta span:last-child { text-align: right; }
+.score-meta .team-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #c8cbc5;
+}
+.score-meta .team-label b { font: 400 15px/1 system-ui, sans-serif; }
+.score-meta .team-label-away { justify-content: flex-end; }
 
 body.control-room-open .scoreboard {
   padding: 0 28px 26px;
@@ -483,6 +491,7 @@ body.control-room-open .event-flash {
 body.control-room-open .event-flash.show { opacity: 1; transform: translateY(0); }
 body.control-room-open .event-flash.goal { background: var(--app-signal); color: #081004; text-shadow: none; }
 body.control-room-open .event-flash.shock { color: #170506; text-shadow: none; }
+body.control-room-open .event-flash.final { background: #d9ddd5; color: #090b09; }
 
 body.control-room-open .tablewrap {
   min-height: 0;

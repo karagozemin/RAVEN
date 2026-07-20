@@ -30,11 +30,7 @@ def main() -> int:
         if anchored is None:
             continue
         receipt = anchored.receipt
-        is_txline_goal = (
-            frame.verified
-            and receipt.action.value == "WITHDRAW"
-            and receipt.txline_sequence == 118
-        )
+        is_txline_goal = frame.verified and receipt.action.value == "WITHDRAW"
         if (
             receipt.action.value == "WITHDRAW"
             and receipt.quotes_cancelled > 0

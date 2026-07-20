@@ -223,7 +223,7 @@ def _cli() -> None:
     parser = argparse.ArgumentParser(description="RAVEN Counterfactual Lab")
     parser.add_argument(
         "--replay",
-        default="data/replay/scores_historical_18222446.jsonl",
+        default="data/replay/scores_historical_18257739.jsonl",
         help="Path used to select/validate the packaged real replay.",
     )
     parser.add_argument("--speed", type=float, default=0.0)

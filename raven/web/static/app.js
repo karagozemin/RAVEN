@@ -29,6 +29,13 @@ const el = {
   stateTrack: $("stateTrack"),
   scoreHome: $("scoreHome"),
   scoreAway: $("scoreAway"),
+  competitionLabel: $("competitionLabel"),
+  homeFlag: $("homeFlag"),
+  homeTeam: $("homeTeam"),
+  awayFlag: $("awayFlag"),
+  awayTeam: $("awayTeam"),
+  homeOddsLabel: $("homeOddsLabel"),
+  awayOddsLabel: $("awayOddsLabel"),
   oddHome: $("oddHome"),
   oddDraw: $("oddDraw"),
   oddAway: $("oddAway"),
@@ -263,6 +270,16 @@ function renderMatch(t) {
   el.fixtureId.textContent = t.fixture_id ?? "—";
   el.matchTime.textContent = t.match_time || "--:--";
 
+  if (t.fixture) {
+    el.competitionLabel.textContent = t.fixture.competition;
+    el.homeFlag.textContent = t.fixture.home.flag;
+    el.homeTeam.textContent = t.fixture.home.name.toUpperCase();
+    el.awayFlag.textContent = t.fixture.away.flag;
+    el.awayTeam.textContent = t.fixture.away.name.toUpperCase();
+    el.homeOddsLabel.textContent = `${t.fixture.home.name.toUpperCase()} / 1`;
+    el.awayOddsLabel.textContent = `${t.fixture.away.name.toUpperCase()} / 2`;
+  }
+
   const s = t.score || { home: 0, away: 0 };
   if (s.home !== lastScore.home) bumpScore(el.scoreHome, s.home);
   if (s.away !== lastScore.away) bumpScore(el.scoreAway, s.away);
@@ -286,8 +303,13 @@ function flashEvent(t) {
   let text = "";
   let cls = "";
   if (t.event_type && t.event_type !== "OTHER") {
-    text = "EVENT / " + t.event_type.replace(/_/g, " ");
-    cls = t.is_shock ? "shock" : "goal";
+    const event = t.event || {};
+    const parts = [event.flag, event.team_code, t.event_type.replace(/_/g, " ")];
+    if (event.player) parts.push(event.player.toUpperCase());
+    if (event.minute) parts.push(`${event.minute}'`);
+    if (t.score) parts.push(`${t.score.home}–${t.score.away}`);
+    text = parts.filter(Boolean).join(" · ");
+    cls = t.event_type === "GOAL" ? "goal" : t.is_final ? "final" : "shock";
   }
   if (!text) return;
   el.eventFlash.textContent = text;

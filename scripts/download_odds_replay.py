@@ -27,9 +27,14 @@ CORE_MARKETS = {
     "OVERUNDER_PARTICIPANT_GOALS",
 }
 
-TARGET_PARAMETERS = {
+REGULATION_PARAMETERS = {
     "ASIANHANDICAP_PARTICIPANT_GOALS": "line=-0.5",
     "OVERUNDER_PARTICIPANT_GOALS": "line=2.5",
+}
+
+EXTRA_TIME_PARAMETERS = {
+    "ASIANHANDICAP_PARTICIPANT_GOALS": "line=-0.5",
+    "OVERUNDER_PARTICIPANT_GOALS": "line=0.5",
 }
 
 
@@ -66,10 +71,18 @@ def _eligible(record: Any, fixture_id: int) -> bool:
         return False
     if record.get("SuperOddsType") not in CORE_MARKETS:
         return False
-    expected_parameters = TARGET_PARAMETERS.get(str(record.get("SuperOddsType")))
-    if expected_parameters is not None and record.get("MarketParameters") != expected_parameters:
+    period = record.get("MarketPeriod")
+    if period in (None, ""):
+        expected_parameters = REGULATION_PARAMETERS.get(
+            str(record.get("SuperOddsType"))
+        )
+    elif period == "et":
+        expected_parameters = EXTRA_TIME_PARAMETERS.get(
+            str(record.get("SuperOddsType"))
+        )
+    else:
         return False
-    if record.get("MarketPeriod") not in (None, ""):
+    if expected_parameters is not None and record.get("MarketParameters") != expected_parameters:
         return False
     prices = record.get("Prices")
     names = record.get("PriceNames")
@@ -148,16 +161,16 @@ def download(fixture_id: int, scores_path: Path, output_path: Path, workers: int
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fixture", type=int, default=18222446)
+    parser.add_argument("--fixture", type=int, default=18257739)
     parser.add_argument(
         "--scores",
         type=Path,
-        default=Path("data/replay/scores_historical_18222446.jsonl"),
+        default=Path("data/replay/scores_historical_18257739.jsonl"),
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("data/replay/odds_historical_18222446.jsonl"),
+        default=Path("data/replay/odds_historical_18257739.jsonl"),
     )
     args = parser.parse_args()
     return 0 if download(args.fixture, args.scores, args.output) else 1

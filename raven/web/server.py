@@ -200,7 +200,7 @@ def serve(host: str = "127.0.0.1", port: int = 8787) -> None:
     print("  RAVEN — Web Control Room")
     print("=" * 60)
     print(f"  Serving at   {url}")
-    print("  Feed         real TxLINE replay · fixture 18222446")
+    print("  Feed         real TxLINE replay · fixture 18257739")
     print(f"  Stream       {url}/stream")
     print("  Press Ctrl+C to stop.")
     print("=" * 60)

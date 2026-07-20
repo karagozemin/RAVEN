@@ -17,10 +17,10 @@ from raven.provenance.store import ReceiptEmitter
 from raven.web.serialize import tick_to_json
 
 _ROOT = Path(__file__).resolve().parents[2]
-_SCORES_JSONL = _ROOT / "data/replay/scores_historical_18222446.jsonl"
-_ODDS_JSONL = _ROOT / "data/replay/odds_historical_18222446.jsonl"
+_SCORES_JSONL = _ROOT / "data/replay/scores_historical_18257739.jsonl"
+_ODDS_JSONL = _ROOT / "data/replay/odds_historical_18257739.jsonl"
 _RECEIPT_ARCHIVE = _ROOT / "receipts/anchored_demo.json"
-_TXLINE_PROOF = _ROOT / "data/proofs/txline_score_18222446_seq118.json"
+_TXLINE_PROOF = _ROOT / "data/proofs/txline_score_18257739_seq1188.json"
 
 _ACTION_TO_EVENT = {
     "goal": "GOAL",
@@ -83,9 +83,9 @@ def _select_scores(
     seen_shocks: set[str] = set()
     for record in records:
         timestamp = int(record.get("Ts", 0))
-        if not start_ms <= timestamp <= end_ms:
-            continue
         action = str(record.get("Action") or "").lower()
+        if not start_ms <= timestamp <= end_ms and action != "game_finalised":
+            continue
         event_data = record.get("Data")
         is_enriched_event = (
             action not in {"goal", "red_card"}
@@ -113,7 +113,10 @@ def _select_scores(
 
 
 def _odds_market_key(record: dict[str, Any]) -> str:
-    return f"{record.get('SuperOddsType')}|{record.get('MarketParameters')}"
+    return (
+        f"{record.get('MarketPeriod')}|{record.get('SuperOddsType')}|"
+        f"{record.get('MarketParameters')}"
+    )
 
 
 def _select_odds(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -169,15 +172,20 @@ def _prepare_payload(record: dict[str, Any], kind: int) -> dict[str, Any]:
 def iter_verified_frames() -> Iterator[VerifiedFrame]:
     """Yield the merged historical match through the production normalizer."""
     validation_ref = None
+    proof_fixture = None
+    proof_sequence = None
     if _TXLINE_PROOF.exists():
         proof = json.loads(_TXLINE_PROOF.read_text(encoding="utf-8"))
+        proof_fixture = int(proof["fixtureId"])
+        proof_sequence = int(proof["sequence"])
         validation_ref = (
             f"solana-devnet:{proof['programId']}:{proof['fixtureId']}:{proof['sequence']}"
         )
     for tick_index, (_, kind, raw_record) in enumerate(_combined_replay(), start=1):
         is_proven_score = (
-            int(raw_record.get("FixtureId", 0)) == 18222446
-            and int(raw_record.get("Seq", -1)) == 118
+            proof_fixture is not None
+            and int(raw_record.get("FixtureId", 0)) == proof_fixture
+            and int(raw_record.get("Seq", -1)) == proof_sequence
         )
         frame = normalize(
             _prepare_payload(raw_record, kind),

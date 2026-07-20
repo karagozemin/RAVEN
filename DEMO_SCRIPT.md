@@ -12,17 +12,18 @@ prices, protects, and proves every material risk action."
 
 *Scroll briefly through System, Control Logic, and Measured Replay.*
 
-"This comparison uses the same 1,976 real TxLINE odds, score, and event frames
+"This comparison uses the same 2,499 real TxLINE odds, score, and event frames
 for both policies. RAVEN reduces measured peak worst-case shock exposure by
-93.92 percent versus an event-blind baseline."
+94.98 percent versus an event-blind baseline."
 
 ## 2. Start The App
 
 *Click **Enter Control Room**, then **Run replay**.*
 
-"The review match has ended, so this is deterministic replay, not generated
-market data. The prices are real TxLINE historical snapshots. Execution is
-explicitly simulated because TxLINE is the data layer, not an order venue."
+"This is the Spain versus Argentina World Cup Final in deterministic replay,
+not generated market data. The prices and the 106th-minute winning goal are
+real TxLINE historical records. Execution is explicitly simulated because
+TxLINE is the data layer, not an order venue."
 
 "RAVEN is now removing vig, deriving bounded fair value, and publishing
 inventory-aware quotes across Match Winner, Asian Handicap, and Total Goals.
@@ -38,7 +39,8 @@ hedges. The hedge engine evaluates the entire connected portfolio under home
 goal, away goal, red card, and no-more-goals scenarios. It accepts a trade only
 when the global worst case improves."
 
-"In this first major hedge, worst-case exposure falls from 111.82 to 9.04.
+"When Ferran Torres scores the winner in the 106th minute, worst-case exposure
+falls from 86.46 to 6.15.
 RAVEN then waits in recalibration and re-enters only after stable consensus. No
 manual action is required."
 
@@ -51,7 +53,7 @@ hash, policy, inventory before and after, cancelled quotes, hedge trades, and
 execution timestamp. These representative receipts are anchored to Solana
 devnet and can be independently recomputed with `verify.ts`."
 
-"We also validate TxLINE score sequence 118 against TxLINE's own devnet Merkle
+"We also validate TxLINE score sequence 1188 against TxLINE's own devnet Merkle
 root using their official program and IDL. So the proof chain covers both the
 source event and RAVEN's autonomous response."
 

@@ -110,9 +110,11 @@ sequenceDiagram
     N-->>A: VerifiedFrame + provider_sequence + payload_hash
 ```
 
-The packaged fixture contains 8,375 downloaded odds records. The web driver
-selects changing full-match 1X2, AH `-0.5`, and O/U `2.5` snapshots at a stable
-cadence, merges enriched score events, and produces 1,976 frames.
+The packaged World Cup Final fixture contains 8,834 downloaded odds records.
+The web driver selects changing regulation and extra-time 1X2, Asian Handicap,
+and Over/Under snapshots at a stable cadence, merges enriched score events,
+and produces 2,499 frames. Market-period rollover cancels regulation quotes
+before publishing extra-time contracts.
 
 Feed latency is measured as provider timestamp lateness against the latest
 observed watermark. A normal gap between ordered market updates is cadence, not
@@ -277,7 +279,7 @@ worst-case improvement for every emitted hedge.
 
 ```mermaid
 flowchart LR
-    E[Goal event fixture 18222446 seq 118] --> API[stat-validation statKey 1]
+    E[Spain goal fixture 18257739 seq 1188] --> API[stat-validation statKey 1]
     API --> MP[Merkle branches + fixture summary]
     MP --> V[validateStat view]
     PDA[(daily_scores_roots PDA)] --> V
@@ -314,7 +316,7 @@ receipts to four public pre-anchored proofs only when both hashes match.
 
 ```mermaid
 flowchart TB
-    FRAMES[Same 1,976 VerifiedFrames] --> B[Event-blind baseline]
+    FRAMES[Same 2,499 VerifiedFrames] --> B[Event-blind baseline]
     FRAMES --> R[Full RAVEN policy]
     EXEC[Same deterministic execution rules] --> B
     EXEC --> R
