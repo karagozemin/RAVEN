@@ -114,6 +114,12 @@ The packaged fixture contains 8,375 downloaded odds records. The web driver
 selects changing full-match 1X2, AH `-0.5`, and O/U `2.5` snapshots at a stable
 cadence, merges enriched score events, and produces 1,976 frames.
 
+Feed latency is measured as provider timestamp lateness against the latest
+observed watermark. A normal gap between ordered market updates is cadence, not
+transport latency; only stale or out-of-order frames add latency risk. This
+keeps the live and replay semantics deterministic without trapping recovery on
+sparse historical updates.
+
 ## Live Ingestion
 
 `LiveSSESource` maintains separate odds and scores stream tasks and merges them
@@ -186,7 +192,9 @@ $$
 
 The quote midpoint shifts against inventory. Half-spread widens additively with
 event hazard, feed latency, volatility, and cross-market incoherence. Fractional
-Kelly controls size only.
+Kelly controls size only. At the per-outcome position limit, RAVEN removes only
+the quote side that would increase exposure and keeps the inventory-reducing
+side live.
 
 ## Deterministic Execution
 
@@ -312,6 +320,10 @@ flowchart TB
     BM --> C[Comparison]
     RM --> C
 ```
+
+The baseline deliberately keeps static spreads and no practical inventory cap;
+RAVEN adds bounded inventory, adaptive spreads, event withdrawal, and hedging.
+Both use the same normalized frames and deterministic matching adapter.
 
 The control policy always remains `NORMAL`, uses a static spread, and never
 hedges. It shares normalization, fair value, quote contracts, inventory, and

@@ -30,13 +30,18 @@ def main() -> int:
         if anchored is None:
             continue
         receipt = anchored.receipt
-        if receipt.action.value == "WITHDRAW" and receipt.quotes_cancelled > 0:
-            selected.setdefault("withdraw", receipt)
-        if (
+        is_txline_goal = (
             frame.verified
             and receipt.action.value == "WITHDRAW"
             and receipt.txline_sequence == 118
+        )
+        if (
+            receipt.action.value == "WITHDRAW"
+            and receipt.quotes_cancelled > 0
+            and not is_txline_goal
         ):
+            selected.setdefault("withdraw", receipt)
+        if is_txline_goal:
             selected.setdefault("txline_goal_withdraw", receipt)
         elif receipt.action.value == "CANCEL_AND_HEDGE" and receipt.hedge_trades:
             selected.setdefault("hedge", receipt)

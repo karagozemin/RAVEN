@@ -189,6 +189,7 @@ let fillTotal = 0;
 let lastScore = { home: 0, away: 0 };
 let flashTimer = null;
 let selectedReceiptHash = "";
+let lastRiskPaintAt = 0;
 
 const STATE_CLASS = {
   NORMAL: "state-normal",
@@ -245,8 +246,13 @@ function renderState(t) {
   });
 
   const risk = t.risk_score ?? 0;
-  el.riskFill.style.width = Math.min(100, Math.max(0, risk)) + "%";
-  el.riskValue.textContent = fmt(risk, 1);
+  const now = performance.now();
+  const urgentRiskPaint = t.transitioned || t.is_shock || t.is_final;
+  if (urgentRiskPaint || now - lastRiskPaintAt >= 250) {
+    el.riskFill.style.width = Math.min(100, Math.max(0, risk)) + "%";
+    el.riskValue.textContent = fmt(risk, 1);
+    lastRiskPaintAt = now;
+  }
 }
 
 function renderMatch(t) {

@@ -328,7 +328,7 @@ def test_reenter_to_normal_with_hysteresis():
     assert d.state is RiskState.NORMAL
 
 
-def test_reenter_holds_when_within_hysteresis_band():
+def test_reenter_moves_to_caution_when_within_hysteresis_band():
     k = RiskKernel(
         caution_threshold=0.35,
         reenter_relief=0.10,
@@ -338,9 +338,10 @@ def test_reenter_holds_when_within_hysteresis_band():
     k.observe(calm_frame(), CALM)
     k.observe(calm_frame(), CALM, hedge_complete=True)
     k.observe(calm_frame(), CALM)                  # REENTER
-    # score 0.30: below caution(0.35) but above caution-relief(0.25) -> hold.
+    # score 0.30: below caution(0.35) but above caution-relief(0.25), so the
+    # one-tick re-entry phase completes into widened CAUTION quoting.
     d = k.observe(calm_frame(), RiskSignals(consensus_dev=1.0, event_latency=0.3))
-    assert d.state is RiskState.REENTER
+    assert d.state is RiskState.CAUTION
 
 
 def test_reenter_spikes_back_to_withdraw():

@@ -14,7 +14,7 @@ prices, protects, and proves every material risk action."
 
 "This comparison uses the same 1,976 real TxLINE odds, score, and event frames
 for both policies. RAVEN reduces measured peak worst-case shock exposure by
-87.76 percent versus an event-blind baseline."
+93.92 percent versus an event-blind baseline."
 
 ## 2. Start The App
 
@@ -38,7 +38,7 @@ hedges. The hedge engine evaluates the entire connected portfolio under home
 goal, away goal, red card, and no-more-goals scenarios. It accepts a trade only
 when the global worst case improves."
 
-"In this first major hedge, worst-case exposure falls from 293.36 to 22.72.
+"In this first major hedge, worst-case exposure falls from 111.82 to 9.04.
 RAVEN then waits in recalibration and re-enters only after stable consensus. No
 manual action is required."
 

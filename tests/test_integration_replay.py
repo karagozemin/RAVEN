@@ -86,10 +86,11 @@ def test_archived_receipts_match_current_replay() -> None:
     assert [receipt.receipt.action.value for receipt in anchored] == [
         "WITHDRAW",
         "CANCEL_AND_HEDGE",
-        "WITHDRAW",
         "REENTER",
+        "WITHDRAW",
     ]
-    assert anchored[2].receipt.txline_sequence == 118
+    assert anchored[0].receipt.txline_sequence == 118
+    assert anchored[3].receipt.txline_sequence == 663
     assert all(receipt.anchor.signature for receipt in anchored)
 
 
@@ -115,7 +116,7 @@ def test_counterfactual_uses_same_frames_and_reduces_peak_risk() -> None:
 def test_web_receipt_exposes_clickable_proof_detail() -> None:
     receipt = next(
         tick["receipt"]
-        for tick in run_replay(speed=0, max_ticks=100)
+        for tick in run_replay(speed=0, max_ticks=450)
         if tick["receipt"] and tick["receipt"]["anchored"]
     )
     assert receipt["signature"]

@@ -134,8 +134,9 @@ class QuoteEngine:
         inventory (``|skew| == 1``). Applied as a *shift of both sides together*
         so it changes where RAVEN wants to trade, not how wide it is.
     max_position:
-        Soft per-outcome position limit that defines "full" for the skew signal
-        and the fractional-Kelly size cap.
+        Hard per-outcome position limit. It defines "full" for the skew signal;
+        at the boundary the side that would increase risk is removed while the
+        inventory-reducing side stays available.
     base_size:
         Baseline size shown per side before Kelly/inventory scaling.
     kelly_fraction:
@@ -155,7 +156,7 @@ class QuoteEngine:
         min_half_spread: float = 0.004,
         max_half_spread: float = 0.15,
         skew_gain: float = 0.010,
-        max_position: float = 1000.0,
+        max_position: float = 150.0,
         base_size: float = 100.0,
         kelly_fraction: float = 0.25,
         hazard_gain: float = 0.020,
@@ -321,4 +322,12 @@ class QuoteEngine:
         tilt = max(-0.75, min(0.75, skew))
         bid_size = size * (1.0 - tilt)
         ask_size = size * (1.0 + tilt)
+
+        # A long book must not keep buying at the hard limit; a short book must
+        # not keep selling. Leave the reducing side live so organic flow can
+        # flatten inventory without forcing a hedge.
+        if skew >= 1.0:
+            bid_size = 0.0
+        elif skew <= -1.0:
+            ask_size = 0.0
         return round(bid_size, 4), round(ask_size, 4)

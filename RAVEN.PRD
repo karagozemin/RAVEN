@@ -93,7 +93,7 @@ Single economic goal: **Risk-adjusted spread capture while surviving match-event
   - 1X2 ↔ Double Chance netting
   - Goal-shock → Total Goals hedge
 - Minimize: `event-shock loss + inventory concentration + hedge cost` (without eliminating spread revenue)
-- Measured first major hedge: worst-case exposure -293.36 → -22.72
+- Measured first major hedge: worst-case exposure -111.82 → -9.04
 - Files: `raven/hedging/engine.py`
 
 ### Layer 7 — Solana Decision Receipts (F7) ✅ IMPLEMENTED
@@ -122,9 +122,9 @@ Single economic goal: **Risk-adjusted spread capture while surviving match-event
 - Replay at 1x–1000x with millisecond fidelity; agent reproduces identical decisions
 - Baseline MM (static, event-blind) vs RAVEN — same feed, real comparison metrics
 - **Never pre-picked showcase numbers — all from actual replay output**
-- Measured peak worst-case exposure: baseline 2,396.29 vs RAVEN 293.36
-- Measured final worst-case exposure: baseline 2,386.19 vs RAVEN 13.87
-- Peak risk reduction: 87.76% across the same 1,976 real TxLINE frames
+- Measured peak worst-case exposure: baseline 4,438.07 vs RAVEN 269.78
+- Measured final worst-case exposure: baseline 4,432.24 vs RAVEN 269.78
+- Peak risk reduction: 93.92% across the same 1,976 real TxLINE frames
 
 ### Layer 9 (Bonus) — Adversarial Flow Detector (F9) ✅ IMPLEMENTED
 - Monitor: repeated flow to agent's stale side, pre-event unidirectional aggression, abnormal fill concentration
@@ -204,11 +204,11 @@ Per TxLINE conventions: `game_finalised` event OR `statusId=100` OR `period=100`
 | 0:25–0:45 | **Solution** — RAVEN + tagline |
 | 0:45–2:20 | **Normal flow** — start replay; show real TxLINE odds, deterministic fills, inventory, and three quoted markets |
 | 2:20–3:20 | **WINNER MOMENT** — show WITHDRAW, 7 active quotes cancelled, and cross-market hedge |
-| | `Worst-case exposure: -293.36 → -22.72` |
+| | `Worst-case exposure: -111.82 → -9.04` |
 | | `TxLINE goal seq 118: native Merkle proof validated on devnet` |
 | | `RAVEN receipt: commitment + full hash + Solana Memo verified` |
 | | `RECALIBRATE → REENTER after stable consensus` |
-| 3:20–4:20 | **Counterfactual** — peak risk 2,396.29 baseline vs 293.36 RAVEN; 87.76% reduction |
+| 3:20–4:20 | **Counterfactual** — peak risk 4,438.07 baseline vs 269.78 RAVEN; 93.92% reduction |
 | 4:20–5:00 | **Architecture + B2B** — shadow mode + verify.ts live demo |
 
 ---

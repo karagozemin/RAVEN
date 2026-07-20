@@ -267,7 +267,7 @@ class RiskKernel:
         stable_updates_required: int = 3,
         reenter_relief: float = 0.10,
         caution_clear_updates: int = 3,
-        caution_relief: float = 0.08,
+        caution_relief: float = 0.05,
     ) -> None:
         if not 0.0 <= caution_threshold <= withdraw_threshold <= 1.0:
             raise ValueError(
@@ -511,8 +511,6 @@ class RiskKernel:
                 f"awaiting stable consensus "
                 f"({self._stable_count}/{self.stable_updates_required})",
             )
-
-
         if state is RiskState.REENTER:
             if score >= self.withdraw_threshold:
                 return (
@@ -521,7 +519,10 @@ class RiskKernel:
                 )
             if score <= self.caution_threshold - self.reenter_relief:
                 return (RiskState.NORMAL, "re-entry complete; back to normal")
-            return (RiskState.REENTER, "re-entering with recovering spreads")
+            return (
+                RiskState.CAUTION,
+                "re-entry complete; elevated risk, keeping widened spreads",
+            )
 
         # Defensive default; unreachable for the closed enum above.
         return (state, "no change")

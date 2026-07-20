@@ -304,6 +304,7 @@ body.control-room-open .risk-fill {
   border-radius: 0;
   background: var(--state-color);
   box-shadow: none;
+  transition: width 180ms ease-out, background-color 180ms ease-out;
 }
 
 body.control-room-open .grid {

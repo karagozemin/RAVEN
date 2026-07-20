@@ -49,11 +49,14 @@ class _AlwaysQuotePolicy:
 
 
 class _BaselineAgent(RavenAgent):
+    """Event-blind control with static spreads and no practical inventory cap."""
+
     def __init__(self) -> None:
         super().__init__(
             risk=_AlwaysQuotePolicy(),  # type: ignore[arg-type]
             quote=QuoteEngine(
                 skew_gain=0.0,
+                max_position=1_000_000.0,
                 hazard_gain=0.0,
                 latency_gain=0.0,
                 vol_gain=0.0,

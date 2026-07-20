@@ -50,19 +50,20 @@ same normalizer and decision core.
 ## Measured Replay
 
 Both policies below process the same ordered `1,976` real TxLINE frames. The
-baseline always quotes a static spread and never hedges. RAVEN runs the full risk
-policy. Execution and matching are identical for both.
+baseline always quotes a static spread with no practical inventory cap and
+never hedges. RAVEN runs the full risk policy. Execution and matching are
+identical for both.
 
 | Metric | Event-blind baseline | RAVEN |
 | --- | ---: | ---: |
-| Deterministic fills | 4,204 | 196 |
-| Quotes cancelled | 0 | 14 |
-| Hedge trades | 0 | 8 |
-| Peak worst-case shock loss | 2,396.29 | 293.36 |
-| Final worst-case shock loss | 2,386.19 | 13.87 |
+| Deterministic fills | 4,204 | 2,600 |
+| Quotes cancelled | 0 | 21 |
+| Hedge trades | 0 | 6 |
+| Peak worst-case shock loss | 4,438.07 | 269.78 |
+| Final worst-case shock loss | 4,432.24 | 269.78 |
 | Manual interventions required | 3 | 0 |
 
-**Peak worst-case risk reduction: 87.76%.** These values are calculated by
+**Peak worst-case risk reduction: 93.92%.** These values are calculated by
 `raven/counterfactual.py`; they are not hard-coded P&L claims.
 
 ```bash

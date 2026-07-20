@@ -106,7 +106,8 @@ class RavenAgent:
         anchor so the agent runs without a Solana connection; wire a real anchor
         in for devnet.
     latency_budget_ms:
-        Feed staleness (ms) that maps to a normalized latency signal of 1.0.
+        Provider timestamp lateness (ms), relative to the latest observed
+        watermark, that maps to a normalized latency signal of 1.0.
     on_tick:
         Optional callback invoked with every :class:`TickResult` (the dashboard
         and CLI subscribe here).
@@ -282,13 +283,22 @@ class RavenAgent:
     # -- signal derivation --------------------------------------------------
 
     def _latency_signal(self, frame: VerifiedFrame) -> float:
-        """Normalized feed staleness in [0, 1] vs the tolerated budget."""
-        prev = self._last_ts_ms
-        self._last_ts_ms = frame.timestamp_ms
-        if prev is None or frame.timestamp_ms is None:
+        """Normalized provider lateness in ``[0, 1]``.
+
+        A gap between two ordered updates is market cadence, not transport
+        latency. Treating that gap as staleness made sparse historical updates
+        look like a broken feed and could keep RECALIBRATE from ever clearing.
+        Instead, retain a provider-time watermark and penalize only frames that
+        arrive behind it. This remains deterministic in replay and catches
+        stale/out-of-order updates in live merged streams.
+        """
+        watermark = self._last_ts_ms
+        if watermark is None or frame.timestamp_ms is None:
+            self._last_ts_ms = frame.timestamp_ms
             return 0.0
-        gap = max(0.0, float(frame.timestamp_ms - prev))
-        return min(1.0, gap / self.latency_budget_ms)
+        lateness = max(0.0, float(watermark - frame.timestamp_ms))
+        self._last_ts_ms = max(watermark, frame.timestamp_ms)
+        return min(1.0, lateness / self.latency_budget_ms)
 
     def _track_volatility(self, odds: OddsSnapshot) -> None:
         stat = self._vol.setdefault(odds.market, _RollingStat())
