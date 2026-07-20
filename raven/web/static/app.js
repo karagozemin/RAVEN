@@ -14,6 +14,7 @@ const $ = (id) => document.getElementById(id);
 const el = {
   landing: $("landing"),
   homeBtn: $("homeBtn"),
+  logoHomeBtn: $("logoHomeBtn"),
   fixtureId: $("fixtureId"),
   matchTime: $("matchTime"),
   speed: $("speed"),
@@ -69,6 +70,7 @@ document.querySelectorAll("[data-enter-app]").forEach((button) => {
 });
 
 el.homeBtn.addEventListener("click", () => setAppView(false));
+el.logoHomeBtn.addEventListener("click", () => setAppView(false));
 
 let source = null;
 let running = false;
