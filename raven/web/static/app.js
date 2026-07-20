@@ -16,6 +16,7 @@ const el = {
   transitionOverlay: $("transitionOverlay"),
   homeBtn: $("homeBtn"),
   logoHomeBtn: $("logoHomeBtn"),
+  brandHomeBtn: $("brandHomeBtn"),
   fixtureId: $("fixtureId"),
   matchTime: $("matchTime"),
   speed: $("speed"),
@@ -146,6 +147,7 @@ document.querySelectorAll("[data-enter-app]").forEach((button) => {
 
 el.homeBtn.addEventListener("click", returnToLanding);
 el.logoHomeBtn.addEventListener("click", returnToLanding);
+el.brandHomeBtn.addEventListener("click", returnToLanding);
 
 window.addEventListener("popstate", async () => {
   const open = window.location.hash === "#control-room";

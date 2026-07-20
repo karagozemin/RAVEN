@@ -37,6 +37,21 @@ body.control-room-open .brand {
   gap: 11px;
 }
 
+body.control-room-open .brand-text {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+body.control-room-open .brand-text:focus-visible {
+  outline: 2px solid var(--app-signal);
+  outline-offset: 4px;
+}
+
+body.control-room-open .brand-text:hover h1 { color: var(--app-signal); }
+
 .logo-home {
   width: 38px;
   height: 38px;
