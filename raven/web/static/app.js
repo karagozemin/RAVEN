@@ -52,25 +52,39 @@ const el = {
 
 const appViews = Array.from(document.querySelectorAll(".app-view"));
 
-function setAppView(open) {
+function renderAppView(open) {
   document.body.classList.toggle("control-room-open", open);
   el.landing.setAttribute("aria-hidden", String(open));
   appViews.forEach((node) => node.setAttribute("aria-hidden", String(!open)));
   window.scrollTo(0, 0);
-  if (open) {
-    history.replaceState(null, "", "#control-room");
-  } else {
-    stop();
-    history.replaceState(null, "", window.location.pathname + window.location.search);
+  if (!open) stop();
+}
+
+function openControlRoom() {
+  renderAppView(true);
+  if (window.location.hash !== "#control-room") {
+    history.pushState({ ravenView: "control-room" }, "", "#control-room");
   }
 }
 
+function returnToLanding() {
+  if (window.location.hash === "#control-room") {
+    history.back();
+    return;
+  }
+  renderAppView(false);
+}
+
 document.querySelectorAll("[data-enter-app]").forEach((button) => {
-  button.addEventListener("click", () => setAppView(true));
+  button.addEventListener("click", openControlRoom);
 });
 
-el.homeBtn.addEventListener("click", () => setAppView(false));
-el.logoHomeBtn.addEventListener("click", () => setAppView(false));
+el.homeBtn.addEventListener("click", returnToLanding);
+el.logoHomeBtn.addEventListener("click", returnToLanding);
+
+window.addEventListener("popstate", () => {
+  renderAppView(window.location.hash === "#control-room");
+});
 
 let source = null;
 let running = false;
@@ -347,5 +361,15 @@ el.stopBtn.addEventListener("click", stop);
 setConnection(false);
 
 if (window.location.hash === "#control-room") {
-  setAppView(true);
+  const controlRoomUrl = window.location.href;
+  history.replaceState(
+    { ravenView: "landing" },
+    "",
+    window.location.pathname + window.location.search
+  );
+  history.pushState({ ravenView: "control-room" }, "", controlRoomUrl);
+  renderAppView(true);
+} else {
+  history.replaceState({ ravenView: "landing" }, "", window.location.href);
+  renderAppView(false);
 }
